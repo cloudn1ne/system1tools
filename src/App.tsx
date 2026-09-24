@@ -56,6 +56,8 @@ export default function App() {
 
   const [fileName, setFileName] = useState('')
   const [lines, setLines] = useState<string[]>([])
+  /** null = every line (default) */
+  const [lineLimit, setLineLimit] = useState<number | null>(null)
   const [results, setResults] = useState<LineResult[]>([])
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
@@ -64,6 +66,11 @@ export default function App() {
   const template = useMemo(() => findTemplate(templates, templateId), [templates, templateId])
   const editorTemplate = editorId ? templates.find((t) => t.id === editorId) : undefined
   const gate = validateTemplate(template)
+  /** the slice actually sent: every line unless a limit is set */
+  const targets = useMemo(
+    () => (lineLimit && lineLimit > 0 ? lines.slice(0, lineLimit) : lines),
+    [lines, lineLimit],
+  )
 
   const handleFile = (file: File) => {
     setFileName(file.name)
@@ -93,7 +100,7 @@ export default function App() {
     const checkpoint = template.checkpoint ?? 'auto'
     const out: LineResult[] = []
     let idx = 0
-    const total = lines.length
+    const total = targets.length
     setProgress({ done: 0, total })
 
     const worker = async () => {
@@ -101,7 +108,7 @@ export default function App() {
         const i = idx
         idx += 1
         if (i >= total) break
-        const raw = lines[i]
+        const raw = targets[i]
         let state: string | Record<string, unknown> = raw
         if (template.structuredInput) {
           try {
@@ -241,7 +248,9 @@ export default function App() {
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <UploadPanel
-                lines={lines.length}
+                totalLines={lines.length}
+                lineLimit={lineLimit}
+                onLineLimit={setLineLimit}
                 fileName={fileName}
                 onFile={handleFile}
                 onAnalyze={analyze}

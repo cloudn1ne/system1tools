@@ -4,23 +4,34 @@ import {
   Card,
   CardContent,
   CardHeader,
+  Checkbox,
   Chip,
+  FormControlLabel,
   LinearProgress,
   Stack,
+  TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import { MAX_FILE_BYTES } from '../config'
 
+const PRESETS = [10, 50, 100, 500]
+
 export default function UploadPanel({
-  lines,
+  totalLines,
+  lineLimit,
+  onLineLimit,
   fileName,
   onFile,
   onAnalyze,
   running,
   progress,
 }: {
-  lines: number
+  totalLines: number
+  /** null = analyse every line (default) */
+  lineLimit: number | null
+  onLineLimit: (n: number | null) => void
   fileName: string
   onFile: (file: File) => void
   onAnalyze: () => void
@@ -40,6 +51,9 @@ export default function UploadPanel({
     onFile(f)
   }
 
+  const limited = lineLimit !== null
+  const planned = limited ? Math.min(lineLimit, totalLines) : totalLines
+  const skipped = Math.max(0, totalLines - planned)
   const pct = progress.total ? (progress.done / progress.total) * 100 : 0
 
   return (
@@ -63,17 +77,65 @@ export default function UploadPanel({
             {fileName || 'Choose file (≤ 10 MB)'}
           </Button>
           {error && <Typography color="error">{error}</Typography>}
+
+          {/* how many of the loaded lines to send */}
+          <Stack spacing={0.75}>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={limited}
+                    onChange={(e) => onLineLimit(e.target.checked ? Math.min(50, Math.max(1, totalLines)) : null)}
+                  />
+                }
+                label={<Typography variant="body2">limit lines</Typography>}
+                sx={{ mr: 0 }}
+              />
+              <TextField
+                size="small"
+                type="number"
+                disabled={!limited}
+                value={limited ? String(lineLimit) : ''}
+                placeholder="all"
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10)
+                  onLineLimit(Number.isFinite(n) && n > 0 ? n : null)
+                }}
+                inputProps={{ min: 1, style: { width: 78 } }}
+              />
+              {PRESETS.map((n) => (
+                <Tooltip key={n} title={`analyse the first ${n} lines`}>
+                  <Chip
+                    size="small"
+                    label={n}
+                    variant={lineLimit === n ? 'filled' : 'outlined'}
+                    color={lineLimit === n ? 'primary' : 'default'}
+                    onClick={() => onLineLimit(n)}
+                  />
+                </Tooltip>
+              ))}
+            </Stack>
+            <Typography variant="caption" color={skipped ? 'warning.main' : 'text.secondary'}>
+              {totalLines === 0
+                ? 'no lines loaded'
+                : limited
+                  ? `analysing the first ${planned} of ${totalLines} lines${skipped ? ` — ${skipped} skipped` : ' (limit covers the whole file)'}`
+                  : `analysing all ${totalLines} line${totalLines === 1 ? '' : 's'}`}
+            </Typography>
+          </Stack>
+
           <Stack direction="row" spacing={1}>
-            <Chip label={`${lines} lines`} color="primary" variant="outlined" />
+            <Chip label={`${planned} of ${totalLines} lines`} color="primary" variant="outlined" />
             <Chip label={fileName || 'no file'} variant="outlined" />
           </Stack>
           <Button
             variant="contained"
             color="secondary"
-            disabled={running || lines === 0}
+            disabled={running || planned === 0}
             onClick={onAnalyze}
           >
-            {running ? 'Analyzing…' : 'Analyze all lines'}
+            {running ? 'Analysing…' : `Analyse ${planned} line${planned === 1 ? '' : 's'}`}
           </Button>
           {running && (
             <Stack spacing={1}>

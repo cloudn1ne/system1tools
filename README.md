@@ -29,8 +29,12 @@ To reach the dev server via a hostname other than localhost, add it to
 2. Edit it, or **New question set**, to build your own from the three Laya primitives.
 3. Upload a file ≤ 10 MB. Each non-empty line becomes one `state`; enable
    *JSON input* on a template to send JSON lines as structured events.
-4. **Analyze all lines** — concurrency 4, live progress.
-5. Read the per-question charts, then the results table: filter by text or
+4. Optionally set **limit lines** (default: *all lines*). Tick it and pick a
+   preset (10/50/100/500) or type any count — the panel then tells you how
+   many lines will be analysed and how many are skipped. The limit slices the
+   loaded lines; it never discards them, so you can raise it and re-run.
+5. **Analyse N lines** — concurrency 4, live progress.
+6. Read the per-question charts, then the results table: filter by text or
    status, sort any column, click a row for that line's full answer + raw JSON.
 
 ## Import / export
@@ -81,6 +85,7 @@ with `Authorization: Bearer ${LITELLM_API_KEY}`.
 | Routing metadata (`model`, `repo`, `reason`, `detection`) | per-line detail dialog + connectivity ping |
 | Structured JSON states | per-template *JSON input* switch |
 | ≤ 10 MB input files | enforced in the uploader |
+| Analyse a bounded prefix of the file | **limit lines** control, default *all lines* |
 | Portable question sets | JSON import/export, per set and all-in-one (`src/io.ts`) |
 
 Client-side validation also warns about the two documented model pitfalls before
@@ -119,7 +124,7 @@ src/components/
   TemplatesPanel.tsx        select / edit / duplicate / delete / new / import / export
   QuestionsEditor.tsx       the CRUD editor: questions, criteria, labels, checkpoint,
                             per-question copy-as-JSON, export this set
-  UploadPanel.tsx           file picker (<=10 MB), line count, progress
+  UploadPanel.tsx           file picker (<=10 MB), limit-lines control, progress
   Charts.tsx                chart.js: noul doughnut+scatter, choice/score bars
   ResultsTable.tsx          filter, sort, paginate, per-line detail dialog
 tests/logic.test.mts        payload/parse/aggregate/validation/io + live endpoint checks
