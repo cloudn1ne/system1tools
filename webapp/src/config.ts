@@ -22,18 +22,13 @@ export const RELAY = {
 
 /**
  * How requests reach the endpoint. Decided from the environment at server start
- * (HTTPS_PROXY / ALL_PROXY / HTTP_PROXY / NO_PROXY / NET_TRANSPORT) and shown to
- * the user read-only — a browser cannot route a single fetch() through a proxy,
- * so when one is configured the request must go via the relay.
+ * (HTTPS_PROXY / ALL_PROXY / HTTP_PROXY / NO_PROXY / NET_TRANSPORT) and not
+ * shown in the UI - a browser cannot route a single fetch() through a proxy, so
+ * when one is configured the request must go via the relay. The server logs its
+ * decision and the redacted proxy at startup.
  */
 export const NET = {
   transport: (env.NET_TRANSPORT === 'direct' ? 'direct' : 'relay') as Transport,
-  /** why this path was chosen, e.g. "HTTPS_PROXY is set, ..." */
-  reason: env.NET_REASON ?? 'default',
-  /** proxy as `scheme://host:port` — never contains credentials */
-  proxy: env.NET_PROXY ?? '',
-  /** which variable the proxy came from, e.g. "HTTPS_PROXY" */
-  proxySource: env.NET_PROXY_SOURCE ?? '',
 }
 
 export type { Transport, ProxyMode } from './types'

@@ -1,25 +1,13 @@
 import React, { useState } from 'react'
-import {
-  Box,
-  Card,
-  CardContent,
-  CardHeader,
-  Chip,
-  Divider,
-  Stack,
-  TextField,
-  Typography,
-  IconButton,
-  Tooltip,
-} from '@mui/material'
+import { Card, CardContent, CardHeader, Stack, TextField, Typography, IconButton, Tooltip } from '@mui/material'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import type { ApiSettings } from '../types'
-import { CONFIG, DEFAULT_ENDPOINT, NET, RELAY } from '../config'
+import { CONFIG, DEFAULT_ENDPOINT } from '../config'
 
 /**
- * Endpoint settings. The network path and proxy are reported here but not
- * editable: a browser cannot route one fetch() through a proxy, so that choice
- * belongs to the server environment, not to a session in the UI.
+ * Endpoint settings. The network path and proxy are neither shown nor set here:
+ * a browser cannot route one fetch() through a proxy, so that choice belongs to
+ * the server environment (see README, "Reaching the endpoint").
  */
 export default function ConfigPanel({
   settings,
@@ -76,40 +64,6 @@ export default function ConfigPanel({
               onChange({ ...settings, endpoint: e.target.value })
             }}
           />
-
-          <Divider />
-
-          <Stack spacing={0.75}>
-            <Typography variant="overline">Network path — set by environment, read only</Typography>
-            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-              <Chip
-                size="small"
-                color={NET.transport === 'relay' ? 'primary' : 'default'}
-                label={NET.transport === 'relay' ? `dev-server relay ${RELAY.path}` : 'direct from browser'}
-              />
-              <Typography variant="caption" color="text.secondary">
-                because {NET.reason}
-              </Typography>
-            </Stack>
-            <Box
-              sx={{
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                fontSize: 12,
-                lineHeight: 1.7,
-                color: 'text.secondary',
-                whiteSpace: 'pre-wrap',
-              }}
-            >
-              {`transport   ${NET.transport}
-proxy       ${NET.proxy ? `${NET.proxy}  (from ${NET.proxySource})` : 'none configured'}
-relay hosts ${RELAY.allowedOrigins.join(', ') || '(none - set RELAY_ALLOWED_ORIGINS)'}`}
-            </Box>
-            <Typography variant="caption" color="text.secondary">
-              Change it with HTTPS_PROXY / ALL_PROXY / HTTP_PROXY / NO_PROXY, or force a path with
-              NET_TRANSPORT=direct|relay in .env, then restart the server. Nothing here is stored in the
-              browser, and a proxy password never reaches it.
-            </Typography>
-          </Stack>
 
           <Stack spacing={0.5}>
             <Typography variant="caption" color="text.secondary">

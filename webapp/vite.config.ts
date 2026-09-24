@@ -69,17 +69,7 @@ if (transport === 'direct' && envProxy) {
 console.log(`  net: ${netReason}  ->  ${transport === 'relay' ? `relay ${RELAY_PATH}` : 'direct from browser'}`)
 if (envProxy) console.log(`  net: proxy ${redact(envProxy)} (from ${proxyHit!.source})`)
 
-/** scheme + host only, so the UI can name the proxy without its credentials. */
-function proxyDisplay(proxy: string | undefined): string {
-  if (!proxy) return ''
-  try {
-    const u = new URL(proxy)
-    return `${u.protocol}//${u.host}`
-  } catch {
-    return '(unparseable)'
-  }
-}
-
+/** scheme + host only, so nothing that leaves the server carries credentials. */
 function hostnameOf(url: string): string {
   try {
     return new URL(url).hostname
@@ -121,10 +111,8 @@ export default defineConfig({
     'import.meta.env.LITELLM_MODEL': JSON.stringify(dotenv.LITELLM_MODEL ?? ''),
     'import.meta.env.RELAY_PATH': JSON.stringify(RELAY_PATH),
     'import.meta.env.RELAY_ALLOWED_ORIGINS': JSON.stringify(allowedOrigins.join(',')),
-    // read-only description of the environment decision, for the settings panel
+    // the only network value the client needs; the reasoning and the proxy stay
+    // in the startup log
     'import.meta.env.NET_TRANSPORT': JSON.stringify(transport),
-    'import.meta.env.NET_REASON': JSON.stringify(netReason),
-    'import.meta.env.NET_PROXY': JSON.stringify(proxyDisplay(envProxy)),
-    'import.meta.env.NET_PROXY_SOURCE': JSON.stringify(envProxy ? proxyHit!.source : ''),
   },
 })

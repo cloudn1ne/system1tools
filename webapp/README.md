@@ -28,11 +28,14 @@ To reach the dev server via a hostname other than localhost, add it to
 
 ## Reaching the endpoint (proxy)
 
-Configured with **environment variables only** - the UI just reports the result,
-because a browser cannot route a single `fetch()` through a proxy, so that
-decision has to belong to the server. The endpoint panel shows the chosen path,
-the reason it was chosen, the proxy host (credentials never included) and the
-relay allowlist.
+Configured with **environment variables only**, and not surfaced in the UI at
+all - a browser cannot route a single `fetch()` through a proxy, so the decision
+belongs to the server. The server prints what it decided at startup:
+
+```
+  net: HTTPS_PROXY is set, and a browser cannot proxy a request itself  ->  relay /__relay
+  net: proxy http://***:***@proxy.internal:3128 (from HTTPS_PROXY)
+```
 
 | Environment | Path taken |
 |---|---|
