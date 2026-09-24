@@ -43,11 +43,16 @@ Remote: `git@github.com:cloudn1ne/system1tools.git` (SSH deploy key).
 
 The repo root is this directory, but only `webapp/` is tracked. `system1/` is
 listed in `.gitignore` and is itself a separate clone — it has its own `.git`
-and would otherwise enter this repo as a gitlink/submodule.
+and would otherwise enter this repo as a gitlink/submodule. Verify at any time:
+
+```bash
+git ls-files | grep -c '^system1/'   # must be 0
+git check-ignore -v system1/         # .gitignore:5:system1/
+```
 
 ### Deploy key
 
-This machine authenticates with a dedicated **read/write deploy key**, not a
+This machine authenticates with a dedicated **deploy key**, not an
 account-wide key:
 
 | | |
@@ -56,22 +61,49 @@ account-wide key:
 | Public key | `~/.ssh/system1tools_deploy.pub` |
 | Fingerprint | `SHA256:5AGElsn7c/W+itdzkf7qVu3xaQbZTWdMS5WylO3XMMQ` (ED25519) |
 
-Install the public key at
-`https://github.com/cloudn1ne/system1tools/settings/keys`
-(**Add a deploy key**, tick *Allow write access* to enable pushing). One deploy
-key is bound to exactly one repository, so rotating it affects nothing else.
+**Install it** at `https://github.com/cloudn1ne/system1tools/settings/keys` →
+*Add deploy key*, paste `~/.ssh/system1tools_deploy.pub`, and tick **Allow write
+access** to enable pushing. One deploy key is bound to one repository, so
+rotating it affects nothing else.
 
-This repo is configured to use only that key, so no other identity is offered
-to GitHub on push:
+Rotate with:
 
 ```bash
-git config core.sshCommand "ssh -i ~/.ssh/system1tools_deploy -o IdentitiesOnly=yes"
+ssh-keygen -t ed25519 -f ~/.ssh/system1tools_deploy -N '' \
+  -C 'deploy-key:system1tools (github.com/cloudn1ne/system1tools)'
 ```
 
-Verify the key is accepted, then push:
+### Forcing git to use *only* this key
+
+`~/.ssh/config` on this box pins `github.com` to an older identity
+(`IdentityFile ~/.ssh/github`, `IdentitiesOnly yes`). Because that config line
+counts as an explicitly named identity, plain `-i <key> -o IdentitiesOnly=yes`
+still **offers both keys** and GitHub accepts the older one — so a push can
+silently succeed as the wrong identity while appearing to use the deploy key.
+
+The repo therefore ignores the user ssh config entirely (`-F /dev/null`), which
+leaves the deploy key as the only candidate:
 
 ```bash
-git ls-remote origin                 # proves the deploy key works
+git config core.sshCommand \
+  "ssh -F /dev/null -i ~/.ssh/system1tools_deploy -o IdentitiesOnly=yes"
+```
+
+Check *which* identity is actually being used — the greeting names the key's
+owner, and `-v` shows what was offered and accepted:
+
+```bash
+ssh -F /dev/null -i ~/.ssh/system1tools_deploy -o IdentitiesOnly=yes -T git@github.com
+git ls-remote origin            # empty output + exit 0 = authenticated, repo empty
+ssh -v -T git@github.com 2>&1 | grep -E 'Offering|Server accepts'
+```
+
+Until the deploy key is installed the last two commands fail with
+`Permission denied (publickey)` — that is the pin working, not a misconfiguration.
+
+Then push:
+
+```bash
 git push -u origin main
 ```
 
