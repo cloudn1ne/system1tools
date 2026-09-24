@@ -2,12 +2,14 @@ import React, { useMemo, useState } from 'react'
 import {
   Box,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
   IconButton,
   InputAdornment,
   MenuItem,
@@ -31,6 +33,7 @@ import {
 import SearchIcon from '@mui/icons-material/Search'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { LineResult, ParsedAnswer, QuestionType } from '../types'
+import { countHiddenCells, isBelowGate, visibleQuestions } from '../filter'
 
 type SortKey = 'line' | 'state' | 'status' | string // string = questionId
 type Dir = 'asc' | 'desc'
@@ -238,6 +241,7 @@ export default function ResultsTable({
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [detail, setDetail] = useState<LineResult | null>(null)
+  const [hideLowConf, setHideLowConf] = useState(false)
 
   const questionIds = useMemo(
     () => (results.length ? Array.from(new Set(results.flatMap((r) => r.answers.map((a) => a.questionId)))) : []),
@@ -262,6 +266,18 @@ export default function ResultsTable({
       )
     })
   }, [results, query, status])
+
+  // The list may hide results the gate already calls unreliable; the detail
+  // dialog keeps everything. Judged on the rows actually on screen, so
+  // searching does not leave a column alive purely because of hidden rows.
+  const shownQuestions = useMemo(
+    () => visibleQuestions(filtered, questionIds, confidenceGate, hideLowConf),
+    [filtered, questionIds, confidenceGate, hideLowConf],
+  )
+  const hiddenCells = useMemo(
+    () => countHiddenCells(filtered, confidenceGate, hideLowConf),
+    [filtered, confidenceGate, hideLowConf],
+  )
 
   const sorted = useMemo(() => {
     const val = (r: LineResult): number | string | null => {
@@ -320,6 +336,29 @@ export default function ResultsTable({
           <ToggleButton value="ok">ok ({results.filter((r) => r.ok).length})</ToggleButton>
           <ToggleButton value="error">failed ({results.filter((r) => !r.ok).length})</ToggleButton>
         </ToggleButtonGroup>
+        <FormControlLabel
+          sx={{ mx: 0 }}
+          control={
+            <Checkbox
+              size="small"
+              checked={hideLowConf}
+              onChange={(e) => {
+                setHideLowConf(e.target.checked)
+                setPage(0)
+              }}
+            />
+          }
+          label={
+            <Tooltip
+              title={`hide the ${(confidenceGate * 100).toFixed(0)}% confidence gate: answers under it are removed from the list, and a question that nobody answered confidently disappears with them`}
+            >
+              <Typography variant="body2">
+                hide below gate
+                {hideLowConf && hiddenCells > 0 ? ` (${hiddenCells})` : ''}
+              </Typography>
+            </Tooltip>
+          }
+        />
         <Select size="small" value={sortKey} onChange={(e) => toggleSort(e.target.value as SortKey)} sx={{ minWidth: 170 }}>
           <MenuItem value="line">sort: line #</MenuItem>
           <MenuItem value="state">sort: state</MenuItem>
@@ -337,7 +376,7 @@ export default function ResultsTable({
           <TableHead>
             <TableRow>
               <TableCell sx={{ width: 40 }} />
-              {(['line', 'state', ...questionIds, 'status'] as SortKey[]).map((key) => (
+              {(['line', 'state', ...shownQuestions, 'status'] as SortKey[]).map((key) => (
                 <TableCell
                   key={key}
                   align={key === 'state' ? 'left' : key === 'line' ? 'left' : 'center'}
@@ -374,8 +413,18 @@ export default function ResultsTable({
                     {r.stateText.length > 80 ? '…' : ''}
                   </Typography>
                 </TableCell>
-                {questionIds.map((q) => {
+                {shownQuestions.map((q) => {
                   const ans = r.answers.find((a) => a.questionId === q)
+                  if (ans && hideLowConf && isBelowGate(ans, confidenceGate)) {
+                    // keep the row shape, but say why this cell went empty
+                    return (
+                      <TableCell key={q} align="center" title={`${(ans.confidence! * 100).toFixed(0)}% confidence, below the ${(confidenceGate * 100).toFixed(0)}% gate`}>
+                        <Typography variant="caption" color="text.secondary">
+                          —
+                        </Typography>
+                      </TableCell>
+                    )
+                  }
                   return (
                     <TableCell key={q} align="center">
                       {ans ? <AnswerChip ans={ans} gate={confidenceGate} /> : '—'}

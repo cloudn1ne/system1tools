@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "tsx tests/logic.test.mts",
-    "test:offline": "OFFLINE=1 tsx tests/logic.test.mts"
+    "test:offline": "OFFLINE=1 tsx tests/logic.test.mts",
+    "test:render": "tsx tests/render.test.tsx"
   },
   "dependencies": {
     "@emotion/react": "^11.13.0",

@@ -17,6 +17,7 @@ npm run build           # typecheck + production bundle in dist/
 npm run preview         # serve dist/ - keeps the relay, unlike static hosting
 npm test                # logic checks + live endpoint checks (needs LITELLM_API_KEY)
 npm run test:offline    # logic checks only
+npm run test:render     # MUI components rendered to markup (structure smoke test)
 ```
 
 `.env` holds `LITELLM_API_KEY`, `LITELLM_BASE_URL`, `LITELLM_MODEL` and is
@@ -76,6 +77,12 @@ with a 60 s upstream timeout.
 5. **Analyse N lines** — concurrency 4, live progress.
 6. Read the per-question charts, then the results table: filter by text or
    status, sort any column, click a row for that line's full answer + raw JSON.
+7. To de-clutter the table, tick **hide below gate**: answers whose confidence
+   falls under the gate disappear from the list (their cell shows `—`, with the
+   confidence as a tooltip), and a question that no line answered confidently is
+   dropped as a column. The label counts what is hidden. Only the list changes —
+   the charts keep every answer, and a row's detail dialog always shows the full
+   set, so nothing is lost: untick, or widen the gate.
 
 ## Import / export
 

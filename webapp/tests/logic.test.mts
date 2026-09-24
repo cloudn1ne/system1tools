@@ -4,7 +4,7 @@ import { aggregate } from '../src/aggregate'
 import { validateTemplate } from '../src/validation'
 import { parseImport, templateToJson, templatesToJson } from '../src/io'
 import { BUILTIN_TEMPLATES } from '../src/presets'
-import type { LineResult, TemplateDef } from '../src/types'
+import type { LineResult, ParsedAnswer, TemplateDef } from '../src/types'
 
 const t = (q: unknown): TemplateDef => ({ id: 'x', label: 'x', description: '', questions: q as never })
 let fails = 0
@@ -43,6 +43,34 @@ ok(aggs[0].yesCount === 1 && aggs[0].noCount === 1 && Math.abs(aggs[0].meanProb 
 const sagg = aggregate([{ line: 1, stateText: 's', ok: true, answers: [sp] }], [{ id: 'urg', type: 'score', instructions: '' }])
 ok(Math.abs(sagg[0].meanScore - 1.2215) < 1e-9 && sagg[0].levelCount === 3, `score mean=${sagg[0].meanScore} levels=${sagg[0].levelCount}`)
 ok(sagg[0].avgProbs['soon'] !== undefined, 'score avg probability keyed by level description')
+
+// 4b. detail-list confidence filter
+import { isBelowGate, visibleQuestions, countHiddenCells } from '../src/filter'
+
+const ans = (questionId: string, confidence: number): ParsedAnswer =>
+  ({ questionId, type: 'noul', instructions: '', prob: 0.5, confidence }) as unknown as ParsedAnswer
+const row = (line: number, list: ParsedAnswer[]): LineResult => ({ line, stateText: `line ${line}`, ok: true, answers: list })
+
+// q1 has confident answers, q2 too, q3 is weak on every line and must disappear
+const gateRows: LineResult[] = [
+  row(1, [ans('q1', 0.9), ans('q2', 0.2), ans('q3', 0.2)]),
+  row(2, [ans('q1', 0.1), ans('q2', 0.1), ans('q3', 0.3)]),
+  row(3, [ans('q1', 0.8), ans('q2', 0.75), ans('q3', 0.1)]),
+]
+
+ok(isBelowGate({ confidence: 0.1 } as never, 0.35), 'low confidence is below the gate')
+ok(!isBelowGate({ confidence: 0.9 } as never, 0.35), 'high confidence stays')
+ok(!isBelowGate({ confidence: undefined } as never, 0.35), 'an answer with no confidence is never hidden')
+ok(!isBelowGate(undefined, 0.35), 'missing answer is not "below gate"')
+ok(!isBelowGate({ confidence: 0.35 } as never, 0.35), 'exactly at the gate is not below it')
+ok(!isBelowGate({ confidence: 0.01 } as never, 0), 'a gate of 0 hides nothing')
+
+ok(JSON.stringify(visibleQuestions(gateRows, ['q1', 'q2', 'q3'], 0.35, false)) === '["q1","q2","q3"]', 'filter off keeps every column')
+ok(JSON.stringify(visibleQuestions(gateRows, ['q1', 'q2', 'q3'], 0.35, true)) === '["q1","q2"]', 'a question nobody answered confidently is dropped, the rest keep their order')
+ok(visibleQuestions(gateRows, ['q1', 'q2'], 0.95, true).length === 0, 'an unreachable gate drops every column')
+ok(countHiddenCells(gateRows, 0.35, false) === 0, 'nothing counted while off')
+ok(countHiddenCells(gateRows, 0.35, true) === 6, `counts exactly the weak cells (${countHiddenCells(gateRows, 0.35, true)})`)
+ok(countHiddenCells([gateRows[1]], 0.35, true) === 3, 'counting a subset sees only that subset')
 
 // 5. import / export round-trips and tolerant shapes
 const rich: TemplateDef = {
