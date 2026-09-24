@@ -13,6 +13,8 @@ Runs on **port 8019** (vite dev server).
 cp .env.example .env    # put your real LiteLLM key in .env
 npm install
 npm run dev             # http://localhost:8019
+npm run build           # typecheck + production bundle in dist/
+npm run preview         # serve dist/ - keeps the relay, unlike static hosting
 npm test                # logic checks + live endpoint checks (needs LITELLM_API_KEY)
 npm run test:offline    # logic checks only
 ```
@@ -48,14 +50,13 @@ hosts with `RELAY_ALLOWED_ORIGINS=https://a,https://b` if you point the UI at
 another endpoint at runtime. Startup logs the proxy it picked, with credentials
 redacted.
 
-Two limits worth knowing: the relay lives in the **dev server**, so a static
-`npm run build` deployment has to use *direct from browser* (or mount
-`createRelayHandler` from `dev/relay.ts` in your own node server); and it is
-request-body limited (4 MB) with a 60 s upstream timeout.
-
-If the endpoint is only reachable through a proxy *and* you must ship the static
-build, run the relay beside it - `dev/relay.ts` is a plain connect-style
-middleware and takes `allowedOrigins` plus `defaultProxy`.
+The relay is mounted on both `npm run dev` and `npm run preview`, so it works
+when the built bundle is served by vite. If you serve `dist/` from something
+else (nginx, object storage), there is no node in the loop: choose *direct from
+browser*, or mount `createRelayHandler` from `dev/relay.ts` in your own node
+server - it is plain connect-style middleware taking `allowedOrigins` and
+`defaultProxy`. The relay is request-body limited (4 MB) with a 60 s upstream
+timeout.
 
 ## Usage
 

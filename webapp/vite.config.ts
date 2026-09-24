@@ -63,11 +63,14 @@ function system1Relay(): Plugin {
     name: 'system1-relay',
     configureServer(server) {
       server.middlewares.use(
-        createRelayHandler({
-          allowedOrigins,
-          defaultProxy: envProxy,
-          env: mergedEnv,
-        }),
+        createRelayHandler({ allowedOrigins, defaultProxy: envProxy, env: mergedEnv }),
+      )
+    },
+    // the bundle always ships knowing about the relay, so `vite preview` (and
+    // any served build) needs it too - configureServer alone is dev-only
+    configurePreviewServer(server) {
+      server.middlewares.use(
+        createRelayHandler({ allowedOrigins, defaultProxy: envProxy, env: mergedEnv }),
       )
     },
   }
