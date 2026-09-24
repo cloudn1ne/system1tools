@@ -1,0 +1,19 @@
+# dependencies / build output
+node_modules/
+dist/
+
+# local env (contains the LiteLLM API key - never commit)
+.env
+.env.local
+.env.*.local
+
+# vite / typescript caches
+*.tsbuildinfo
+.vite/
+
+# logs & OS cruft
+*.log
+.DS_Store
+
+# the cloned upstream system1 repo lives one level up; never vendored here
+system1/

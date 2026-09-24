@@ -1,19 +1,30 @@
-# dependencies / build output
-node_modules/
-dist/
+# ---------------------------------------------------------------- not ours --
+# Upstream clone of https://github.com/cloudn1ne/system1 kept here for
+# reference (its Dockerfile/compose/SAMPLES.md). It is a separate git repo and
+# is NEVER part of this one.
+system1/
 
-# local env (contains the LiteLLM API key - never commit)
+# ---------------------------------------------------------------- webapp ----
+webapp/node_modules/
+webapp/dist/
+
+# local env — holds the LiteLLM API key; never commit.
+# (.env.example IS tracked; do not widen these patterns to .env*)
 .env
 .env.local
 .env.*.local
 
 # vite / typescript caches
-*.tsbuildinfo
-.vite/
+webapp/*.tsbuildinfo
+webapp/.vite/
 
-# logs & OS cruft
+# ---------------------------------------------------------------- general ---
 *.log
 .DS_Store
 
-# the cloned upstream system1 repo lives one level up; never vendored here
-system1/
+# deploy keys and other private material must never be committed, even by
+# accident inside the tree
+id_*
+*.pem
+*.key
+*.p12

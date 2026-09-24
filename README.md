@@ -1,147 +1,105 @@
-# System1 Analyzer
+# system1tools
 
-React + TypeScript + Material UI tool for [Laya](https://huggingface.co/convaiinnovations/laya),
-the non-autoregressive System 1 decision model. Upload a file, send each line as a
-`state` to the Jev-compatible `POST /v1/systemone` endpoint with a set of typed
-questions, then aggregate and visualize the answers with chart.js.
-
-Runs on **port 8019** (vite dev server).
-
-## Run
-
-```bash
-cp .env.example .env    # put your real LiteLLM key in .env
-npm install
-npm run dev             # http://localhost:8019
-npm test                # logic checks + live endpoint checks (needs LITELLM_API_KEY)
-npm run test:offline    # logic checks only
-```
-
-`.env` holds `LITELLM_API_KEY`, `LITELLM_BASE_URL`, `LITELLM_MODEL` and is
-gitignored. `vite.config.ts` parses that file directly, so a `LITELLM_*`
-variable already present in the **process environment does not override it**.
-To reach the dev server via a hostname other than localhost, add it to
-`server.allowedHosts` in `vite.config.ts`.
-
-## Usage
-
-1. Pick a predefined question set (MITRE ATT&CK analyzer is first).
-2. Edit it, or **New question set**, to build your own from the three Laya primitives.
-3. Upload a file ≤ 10 MB. Each non-empty line becomes one `state`; enable
-   *JSON input* on a template to send JSON lines as structured events.
-4. Optionally set **limit lines** (default: *all lines*). Tick it and pick a
-   preset (10/50/100/500) or type any count — the panel then tells you how
-   many lines will be analysed and how many are skipped. The limit slices the
-   loaded lines; it never discards them, so you can raise it and re-run.
-5. **Analyse N lines** — concurrency 4, live progress.
-6. Read the per-question charts, then the results table: filter by text or
-   status, sort any column, click a row for that line's full answer + raw JSON.
-
-## Import / export
-
-Everything is plain JSON, so question sets move between browsers, repos and
-curl examples without this app involved.
-
-| Action | Where | Result |
-|---|---|---|
-| Export **all** sets in one file | ⤓ icon in the *Predefined questions* header | `system1-questions-N-sets.json` |
-| Export **one** set | ⤓ icon on a set's row, or *Export this set* in the editor | `<set-name>.json` |
-| Export **one question** | copy icon on a question row in the editor | that question as JSON on the clipboard |
-| Import | ⤒ icon in the header, or *Import* | merges, reports added/replaced/skipped |
-
-Import is deliberately tolerant — it accepts any of:
-
-```jsonc
-{ "system1-analyzer": 1, "templates": [ … ] }   // anything this app exported
-[ { "label": "…", "questions": { … } } ]         // a bare array of sets
-{ "questions": { … }, "checkpoint": "english" }  // a wrapped set with metadata
-{ "dept": { "type": "choice", … } }              // a raw Laya questions map
-{ "type": "noul", "instructions": "…" }          // one lone question
-```
-
-That means you can save the `-d '{…}'` body of any Laya or Jev `curl` example —
-including the four in `system1/SAMPLES.md` — and import it directly: the
-imported set re-sends byte-identical `questions`. Entries that are not a
-`noul`/`choice`/`score` question are skipped and named in the result notice,
-never silently dropped. Importing a set whose `id` already exists **replaces**
-it, so an edited export round-trips; new ids are appended.
-
-## Laya feature coverage
-
-Request: `{ state, questions }` POSTed to `${LITELLM_BASE_URL}/v1/systemone`
-with `Authorization: Bearer ${LITELLM_API_KEY}`.
-
-| Laya feature | In the app |
-|---|---|
-| `noul` — calibrated P(true) | editor + doughnut/scatter, mean P(true) |
-| `choice` — `{key: description}` map **or** plain list | editor map/list toggle, distribution + avg probability per option |
-| `score` — ordinal levels, expected level + legend | editor level list with reorder, mean level / max level, distribution |
-| `noul` `criteria` keyed only `true`/`false` | editor rejects any other key (the server answers 422) |
-| `noul` `labels` override (`false`/`true`, distinct) | editor fields + "must differ" validation |
-| Checkpoint pin: `english` / `multilingual` / `typed-decisions` | per-template `checkpoint` select |
-| Auto routing (omit `model`) | `checkpoint: auto` — Router picks by script/language |
-| Empty option descriptions (`{"coding": null}`) | supported, as in Laya's own presets |
-| `confidence` per answer | shown everywhere; confidence-gate slider flags low-confidence answers |
-| Routing metadata (`model`, `repo`, `reason`, `detection`) | per-line detail dialog + connectivity ping |
-| Structured JSON states | per-template *JSON input* switch |
-| ≤ 10 MB input files | enforced in the uploader |
-| Analyse a bounded prefix of the file | **limit lines** control, default *all lines* |
-| Portable question sets | JSON import/export, per set and all-in-one (`src/io.ts`) |
-
-Client-side validation also warns about the two documented model pitfalls before
-you burn a run: boolean-word `choice` keys (`true`/`false`/`yes`/`no` — the
-checkpoints can follow the label instead of the state, #156) and > 20 options in
-one question (options share a fixed `head_max_len` token budget).
-
-Laya's own workflow presets from
-[`laya/presets.py`](https://github.com/NandhaKishorM/laya/blob/main/laya/presets.py)
-ship as editable question sets: ticket triage, email triage, prompt guardrails,
-content moderation, model router. The four `SAMPLES.md` shapes from the
-[`cloudn1ne/system1`](https://github.com/cloudn1ne/system1) repo ship alongside them.
-
-### Known model caveats (from the model card)
-
-- Probabilities ship **over-confident**; refit a temperature per (type, option
-  count) on your own data before treating them as calibrated.
-- `action.act_probability` carries no usable signal (#185) — gate on
-  `confidence` instead. The app surfaces confidence and ignores `act_probability`.
-- Ordinal `score` is the weakest primitive, and `laya-multilingual` has a
-  position bias on score levels (#131). For English score questions pin
-  `checkpoint: english`.
+Tools for working with [Laya](https://huggingface.co/convaiinnovations/laya),
+the multilingual non-autoregressive System 1 decision model, served behind a
+LiteLLM proxy.
 
 ## Layout
 
 ```
-src/presets.ts              built-in question sets (SAMPLES + Laya presets)
-src/templatesStore.ts       localStorage CRUD for predefined question sets
-src/validation.ts           Laya's question rules, checked before any request
-src/io.ts                   JSON export + tolerant multi-shape import
-src/api.ts                  questionsPayload() per primitive + sendSystemOne()
-src/parser.ts               parses noul/choice/score answers (score = numeric level + legend)
-src/aggregate.ts            mean P(true), mean level, distributions, avg prob, mean confidence
-src/components/
-  ConfigPanel.tsx           endpoint / key / model / path, confidence gate, ping
-  TemplatesPanel.tsx        select / edit / duplicate / delete / new / import / export
-  QuestionsEditor.tsx       the CRUD editor: questions, criteria, labels, checkpoint,
-                            per-question copy-as-JSON, export this set
-  UploadPanel.tsx           file picker (<=10 MB), limit-lines control, progress
-  Charts.tsx                chart.js: noul doughnut+scatter, choice/score bars
-  ResultsTable.tsx          filter, sort, paginate, per-line detail dialog
-tests/logic.test.mts        payload/parse/aggregate/validation/io + live endpoint checks
+system1tools/
+├── webapp/       ← THE PROJECT: React + TS + MUI + chart.js analysis tool
+└── system1/      ← NOT PART OF THIS REPO (ignored): a local clone of
+                    github.com/cloudn1ne/system1, kept only for reference —
+                    its Dockerfile, docker-compose.yml and SAMPLES.md describe
+                    the server this tool talks to.
 ```
 
-## Endpoint note
+Everything actionable lives in **[`webapp/`](webapp/README.md)**. Its README is
+the detailed reference (usage, Laya feature coverage, import/export format,
+endpoint notes). This file covers the repository itself: layout, git, deploy.
 
-`https://ai.warp.at` is a LiteLLM proxy. `POST /v1/systemone` only works because
-the proxy is configured with a passthrough route for it:
+Quick start:
 
-```yaml
-litellm_settings:
-  passthrough_routes:
-    - path: "/v1/systemone"
-      target: "http://ai1.warp.at:8001"
+```bash
+cd webapp
+cp .env.example .env     # add your LiteLLM API key
+npm install
+npm run dev              # http://localhost:8019
+npm test                 # logic + live endpoint checks
 ```
 
-The proxy's standard `/v1/chat/completions` route **cannot** serve `laya`: the
-upstream is not OpenAI-compatible, so it 404s. `GET /v1/models` does list
-`laya`, which makes the failure easy to misread as a bad key.
+## What the webapp does
+
+Uploads a file, sends every line (or a bounded prefix of them) as a `state` to
+the Jev-compatible `POST /v1/systemone` endpoint with a set of typed questions
+(`noul`, `choice`, `score`), then aggregates the answers statistically and
+charts them with chart.js. Question sets are editable in the browser and
+portable as JSON. See [`webapp/README.md`](webapp/README.md).
+
+## Git
+
+Remote: `git@github.com:cloudn1ne/system1tools.git` (SSH deploy key).
+
+The repo root is this directory, but only `webapp/` is tracked. `system1/` is
+listed in `.gitignore` and is itself a separate clone — it has its own `.git`
+and would otherwise enter this repo as a gitlink/submodule.
+
+### Deploy key
+
+This machine authenticates with a dedicated **read/write deploy key**, not a
+account-wide key:
+
+| | |
+|---|---|
+| Private key | `~/.ssh/system1tools_deploy` (mode 600, outside the repo) |
+| Public key | `~/.ssh/system1tools_deploy.pub` |
+| Fingerprint | `SHA256:5AGElsn7c/W+itdzkf7qVu3xaQbZTWdMS5WylO3XMMQ` (ED25519) |
+
+Install the public key at
+`https://github.com/cloudn1ne/system1tools/settings/keys`
+(**Add a deploy key**, tick *Allow write access* to enable pushing). One deploy
+key is bound to exactly one repository, so rotating it affects nothing else.
+
+This repo is configured to use only that key, so no other identity is offered
+to GitHub on push:
+
+```bash
+git config core.sshCommand "ssh -i ~/.ssh/system1tools_deploy -o IdentitiesOnly=yes"
+```
+
+Verify the key is accepted, then push:
+
+```bash
+git ls-remote origin                 # proves the deploy key works
+git push -u origin main
+```
+
+## Credentials policy
+
+Nothing secret is tracked, and nothing secret is in the existing history — it
+was audited with a full blob scan plus a pickaxe search for both keys seen in
+this project:
+
+```bash
+# every blob in every commit, grepped for key-like material  -> 0 matches
+git rev-list --objects --all | awk '{print $1}' | git cat-file --batch \
+  | grep -c -E 'sk-[A-Za-z0-9]{16,}'
+```
+
+The rules that keep it that way:
+
+- **`.env` is ignored** — it holds the real `LITELLM_API_KEY`. Only
+  `.env.example` (placeholder key, real base URL/model) is tracked.
+- Do not widen the ignore patterns to `.env*`; that would drop
+  `.env.example` from the repo.
+- `id_*`, `*.pem`, `*.key`, `*.p12` are ignored so a key file cannot be
+  committed by accident from inside the tree.
+- The `README` files show the key only as `sk-...`.
+- The LiteLLM key is read at dev-server start from `.env` by
+  `webapp/vite.config.ts`, which parses that file directly — a `LITELLM_*`
+  variable in the process environment does **not** override it, and the key is
+  not baked into any committed file.
+
+Before any first push to a shared remote, re-run the blob scan above and
+confirm `git ls-files | grep -E '(^|/)\.env$|\.pem$|\.key$'` returns nothing.
