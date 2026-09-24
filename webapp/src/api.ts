@@ -1,5 +1,5 @@
 import type { Checkpoint, QuestionDef, TemplateDef, ProxyMode, Transport } from './types'
-import { RELAY } from './config'
+import { NET, RELAY } from './config'
 
 export interface SendOptions {
   state: string | Record<string, unknown>
@@ -14,9 +14,13 @@ export interface RequestSettings {
   baseUrl: string
   apiKey: string
   endpoint: string
-  transport: Transport
-  proxyMode: ProxyMode
-  proxyUrl: string
+  /**
+   * Normally omitted: the path and proxy come from the server's environment
+   * decision (see NET in config.ts). Callers override only for tests.
+   */
+  transport?: Transport
+  proxyMode?: ProxyMode
+  proxyUrl?: string
 }
 
 function cleanNoulCriteria(q: QuestionDef): Record<string, string> | undefined {
@@ -88,16 +92,20 @@ export async function sendSystemOne(settings: RequestSettings, opts: SendOptions
   if (settings.apiKey) headers['Authorization'] = `Bearer ${settings.apiKey}`
 
   let url = target
-  if (settings.transport === 'relay') {
-    if (settings.proxyMode === 'custom' && !settings.proxyUrl.trim()) {
+  // the environment decides how the request travels; an explicit value in the
+  // settings object exists for tests and unusual embedders only
+  const transport = settings.transport ?? NET.transport
+  if (transport === 'relay') {
+    const proxyMode = settings.proxyMode ?? 'auto'
+    if (proxyMode === 'custom' && !settings.proxyUrl?.trim()) {
       throw new Error('proxy mode is "custom" but no proxy URL is set')
     }
     url = RELAY.path
     headers['X-Relay-Target'] = target
-    // absent header = use whatever proxy the dev server found in its own
-    // environment; empty header = explicitly go direct from the dev server
-    if (settings.proxyMode === 'custom') headers['X-Relay-Proxy'] = settings.proxyUrl.trim()
-    else if (settings.proxyMode === 'none') headers['X-Relay-Proxy'] = ''
+    // absent header = let the server apply its own environment; empty header =
+    // explicitly go direct from the server; a value = use that proxy
+    if (proxyMode === 'custom') headers['X-Relay-Proxy'] = settings.proxyUrl!.trim()
+    else if (proxyMode === 'none') headers['X-Relay-Proxy'] = ''
   }
 
   const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })

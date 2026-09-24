@@ -51,11 +51,51 @@ export function proxyVarFor(target: string): 'https_proxy' | 'http_proxy' {
 /** Common env spellings, most specific first. */
 export const PROXY_ENV_ORDER = ['https_proxy', 'HTTPS_PROXY', 'all_proxy', 'ALL_PROXY', 'http_proxy', 'HTTP_PROXY'] as const
 
-export function proxyFromEnv(env: Record<string, string | undefined>, target: string): string | undefined {
+export interface ProxyDecision {
+  url: string
+  /** which variable it came from, for the read-only settings display */
+  source: string
+}
+
+export function proxyDecision(env: Record<string, string | undefined>, target: string): ProxyDecision | undefined {
   const specific = proxyVarFor(target)
   for (const key of [specific, ...PROXY_ENV_ORDER]) {
     const v = (env[key] ?? '').trim()
-    if (v) return v
+    if (v) return { url: v, source: key }
   }
   return undefined
+}
+
+export function proxyFromEnv(env: Record<string, string | undefined>, target: string): string | undefined {
+  return proxyDecision(env, target)?.url
+}
+
+/**
+ * NO_PROXY / no_proxy support. An explicit proxy agent bypasses the platform
+ * defaults entirely, so without this a NO_PROXY list silently does nothing.
+ * Accepts `*`, `*.domain`, `.domain` and bare hostnames (all treated as suffix
+ * matches), an optional :port, comma or space separated.
+ */
+export function bypassesProxy(target: string, noProxy: string | undefined): boolean {
+  const o = originOf(target)
+  if (!o) return false
+  const host = new URL(o).hostname.toLowerCase()
+  const port = new URL(o).port || (o.startsWith('https:') ? '443' : '80')
+  for (const raw of `${noProxy ?? ''}`.split(/[,\s]+/)) {
+    let entry = raw.trim().toLowerCase()
+    if (!entry) continue
+    if (entry === '*') return true
+    let entryPort = ''
+    const m = entry.match(/^(.*):(\d+)$/)
+    if (m) {
+      entry = m[1]
+      entryPort = m[2]
+    }
+    if (entryPort && entryPort !== port) continue
+    // '*.warp.at', '.warp.at' and 'warp.at' all mean the same suffix
+    entry = entry.replace(/^\*\.?/, '').replace(/^\.+/, '').replace(/\.+$/, '')
+    if (!entry) continue
+    if (host === entry || host.endsWith(`.${entry}`)) return true
+  }
+  return false
 }

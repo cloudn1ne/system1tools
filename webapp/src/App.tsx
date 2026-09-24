@@ -52,11 +52,6 @@ export default function App() {
     model: CONFIG.model,
     endpoint: DEFAULT_ENDPOINT,
     confidenceGate: 0.35,
-    // relay by default: it works wherever the dev server can reach the
-    // endpoint, including through a proxy, and needs no CORS exception
-    transport: 'relay',
-    proxyMode: 'auto',
-    proxyUrl: '',
   })
 
   const [fileName, setFileName] = useState('')
@@ -148,7 +143,7 @@ export default function App() {
   const connectTest = async () => {
     setError(null)
     try {
-      const payload = (await sendSystemOne({ ...settings }, {
+      const payload = (await sendSystemOne(settings, {
         state: 'FIREWALL: blocked outbound connection from 10.30.2.7 to 185.220.101.44:4444 (TLS), repeated every 5s.',
         questions: questionsPayload(template),
         checkpoint: template.checkpoint ?? 'auto',

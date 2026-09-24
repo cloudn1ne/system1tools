@@ -1,23 +1,26 @@
 import React, { useState } from 'react'
 import {
+  Box,
   Card,
   CardContent,
   CardHeader,
+  Chip,
   Divider,
-  MenuItem,
-  Select,
   Stack,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Typography,
   IconButton,
   Tooltip,
 } from '@mui/material'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
-import type { ApiSettings, ProxyMode, Transport } from '../types'
-import { CONFIG, DEFAULT_ENDPOINT, RELAY } from '../config'
+import type { ApiSettings } from '../types'
+import { CONFIG, DEFAULT_ENDPOINT, NET, RELAY } from '../config'
 
+/**
+ * Endpoint settings. The network path and proxy are reported here but not
+ * editable: a browser cannot route one fetch() through a proxy, so that choice
+ * belongs to the server environment, not to a session in the UI.
+ */
 export default function ConfigPanel({
   settings,
   onChange,
@@ -73,61 +76,39 @@ export default function ConfigPanel({
               onChange({ ...settings, endpoint: e.target.value })
             }}
           />
+
           <Divider />
 
-          <Stack spacing={1}>
-            <Typography variant="overline">Network path</Typography>
-            <ToggleButtonGroup
-              size="small"
-              exclusive
-              value={settings.transport}
-              onChange={(_, v) => v && onChange({ ...settings, transport: v as Transport })}
+          <Stack spacing={0.75}>
+            <Typography variant="overline">Network path — set by environment, read only</Typography>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+              <Chip
+                size="small"
+                color={NET.transport === 'relay' ? 'primary' : 'default'}
+                label={NET.transport === 'relay' ? `dev-server relay ${RELAY.path}` : 'direct from browser'}
+              />
+              <Typography variant="caption" color="text.secondary">
+                because {NET.reason}
+              </Typography>
+            </Stack>
+            <Box
+              sx={{
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                fontSize: 12,
+                lineHeight: 1.7,
+                color: 'text.secondary',
+                whiteSpace: 'pre-wrap',
+              }}
             >
-              <ToggleButton value="direct">direct from browser</ToggleButton>
-              <ToggleButton value="relay">dev-server relay</ToggleButton>
-            </ToggleButtonGroup>
+              {`transport   ${NET.transport}
+proxy       ${NET.proxy ? `${NET.proxy}  (from ${NET.proxySource})` : 'none configured'}
+relay hosts ${RELAY.allowedOrigins.join(', ') || '(none - set RELAY_ALLOWED_ORIGINS)'}`}
+            </Box>
             <Typography variant="caption" color="text.secondary">
-              {settings.transport === 'direct'
-                ? 'the browser posts straight to the base URL - no proxy support, because a browser cannot route a single fetch() through one.'
-                : `the browser posts to ${RELAY.path} on this dev server, which forwards from node where an HTTP(S) proxy is configurable. Use this when the endpoint is only reachable via a proxy; it also sidesteps CORS.`}
+              Change it with HTTPS_PROXY / ALL_PROXY / HTTP_PROXY / NO_PROXY, or force a path with
+              NET_TRANSPORT=direct|relay in .env, then restart the server. Nothing here is stored in the
+              browser, and a proxy password never reaches it.
             </Typography>
-
-            {settings.transport === 'relay' && (
-              <>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems={{ md: 'center' }}>
-                  <Select
-                    size="small"
-                    value={settings.proxyMode}
-                    onChange={(e) => onChange({ ...settings, proxyMode: e.target.value as ProxyMode })}
-                    sx={{ minWidth: 250 }}
-                  >
-                    <MenuItem value="auto">proxy: from server environment</MenuItem>
-                    <MenuItem value="custom">proxy: custom URL</MenuItem>
-                    <MenuItem value="none">no proxy (direct from server)</MenuItem>
-                  </Select>
-                  {settings.proxyMode === 'custom' && (
-                    <TextField
-                      size="small"
-                      fullWidth
-                      placeholder="http://user:pass@proxy.internal:3128"
-                      value={settings.proxyUrl}
-                      onChange={(e) => onChange({ ...settings, proxyUrl: e.target.value })}
-                    />
-                  )}
-                </Stack>
-                <Typography variant="caption" color="text.secondary">
-                  {RELAY.proxyFromEnv
-                    ? 'the dev server found a proxy in its environment (that value is never sent to the browser)'
-                    : 'no proxy in the dev server environment - set HTTPS_PROXY in .env or choose a custom URL'}
-                  {settings.proxyMode === 'custom' && !settings.proxyUrl.trim()
-                    ? ' | custom URL is empty, so requests will be refused'
-                    : ''}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  relay only forwards to: {RELAY.allowedOrigins.join(', ') || '(none - set RELAY_ALLOWED_ORIGINS)'}
-                </Typography>
-              </>
-            )}
           </Stack>
 
           <Stack spacing={0.5}>

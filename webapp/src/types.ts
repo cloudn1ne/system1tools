@@ -48,12 +48,6 @@ export interface ApiSettings {
   endpoint: string
   /** flag answers whose confidence falls below this (Laya: gate on confidence, not act_probability) */
   confidenceGate: number
-  /** how the request physically leaves the browser */
-  transport: Transport
-  /** proxy selection, used when transport is 'relay' */
-  proxyMode: ProxyMode
-  /** proxy URL for proxyMode 'custom', e.g. http://proxy.internal:3128 */
-  proxyUrl: string
 }
 
 /** Parsed answer for a single question on a single line. */

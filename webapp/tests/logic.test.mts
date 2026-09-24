@@ -110,8 +110,31 @@ ok(proxyFromEnv({ http_proxy: 'http://s:1' }, 'http://ai.warp.at') === 'http://s
 ok(proxyFromEnv({ http_proxy: 'http://s:1' }, 'https://ai.warp.at') === 'http://s:1', 'falls through to http_proxy for https target')
 ok(proxyFromEnv({}, 'https://ai.warp.at') === undefined, 'no proxy vars -> direct')
 
+// 6a. which variable supplied it, and NO_PROXY
+import { proxyDecision, bypassesProxy } from '../dev/relayPolicy'
+
+ok(proxyDecision({ HTTPS_PROXY: 'http://p:1' }, 'https://ai.warp.at')?.source === 'HTTPS_PROXY', 'decision names its source variable')
+ok(proxyDecision({ https_proxy: 'http://p:1' }, 'https://ai.warp.at')?.source === 'https_proxy', 'lowercase spelling honoured')
+ok(proxyDecision({ ALL_PROXY: 'http://p:1' }, 'https://ai.warp.at')?.url === 'http://p:1', 'ALL_PROXY accepted')
+ok(proxyDecision({}, 'https://ai.warp.at') === undefined, 'no proxy vars -> no decision')
+
+ok(bypassesProxy('http://localhost:8019/x', 'localhost'), 'exact host bypassed')
+ok(bypassesProxy('https://ai.warp.at/v1', 'warp.at'), 'domain suffix bypassed')
+ok(bypassesProxy('https://ai.warp.at/v1', '.warp.at'), 'leading-dot suffix bypassed')
+ok(bypassesProxy('https://ai.warp.at/v1', '*.warp.at'), "star-dot form bypassed (the usual NO_PROXY spelling)")
+ok(bypassesProxy('https://anything.example/x', '*'), 'wildcard bypasses everything')
+ok(!bypassesProxy('https://ai.warp.at/v1', 'other.example localhost'), 'no match -> proxy still used')
+ok(bypassesProxy('https://ai.warp.at/v1', undefined) === false, 'absent NO_PROXY bypasses nothing')
+ok(bypassesProxy('http://ai.warp.at:8080/x', 'ai.warp.at:8080'), 'port-specific entry matches that port')
+ok(!bypassesProxy('http://ai.warp.at:8080/x', 'ai.warp.at:9999'), 'port-specific entry ignores other ports')
+ok(!bypassesProxy('https://notwarp.at/x', 'warp.at'), 'suffix match needs a real domain boundary')
+ok(!bypassesProxy('https://notwarp.at/x', '*.warp.at'), 'star-dot also needs the boundary')
+ok(bypassesProxy('https://AI.Warp.At/v1', 'ai.warp.at'), 'host comparison is case insensitive')
 // 6b. what the client actually sends for each transport/proxy choice
 import { targetUrl } from '../src/api'
+import { NET } from '../src/config'
+
+ok(NET.transport === 'relay', `default transport comes from the environment config (${NET.transport})`)
 
 ok(targetUrl({ baseUrl: 'https://ai.warp.at', endpoint: '/v1/systemone' }) === 'https://ai.warp.at/v1/systemone', 'target url joins base + endpoint')
 ok(targetUrl({ baseUrl: 'http://h:8003', endpoint: '' }) === 'http://h:8003/v1/systemone', 'blank endpoint falls back to default path')
@@ -173,11 +196,19 @@ ok(targetUrl({ baseUrl: 'http://h:8003', endpoint: '' }) === 'http://h:8003/v1/s
 
   // direct mode bypasses the relay entirely
   await sendSystemOne(
-    { baseUrl: 'https://ai.warp.at', apiKey: '', endpoint: '/v1/systemone', transport: 'direct', proxyMode: 'auto', proxyUrl: '' },
+    { baseUrl: 'https://ai.warp.at', apiKey: '', endpoint: '/v1/systemone', transport: 'direct' },
     { state: 'x', questions: {}, checkpoint: 'auto', model: '' },
   )
   ok(url === 'https://ai.warp.at/v1/systemone', `direct mode posts straight to the endpoint (${url})`)
   ok(!headers['X-Relay-Target'] && !headers['X-Relay-Proxy'], 'direct mode sends no relay headers')
+
+  // omitting transport entirely = whatever the environment decided
+  await sendSystemOne(
+    { baseUrl: 'https://ai.warp.at', apiKey: '', endpoint: '/v1/systemone' },
+    { state: 'x', questions: {}, checkpoint: 'auto', model: '' },
+  )
+  ok(url === (NET.transport === 'relay' ? '/__relay' : 'https://ai.warp.at/v1/systemone'), `no transport -> environment default (${url})`)
+  ok(headers['X-Relay-Proxy'] === undefined, 'default sends no proxy header, leaving it to the server')
 
   globalThis.fetch = realFetch
 }
@@ -190,8 +221,6 @@ const settings = {
   endpoint: '/v1/systemone',
   // live tests talk to the endpoint straight from node, not through the relay
   transport: 'direct' as const,
-  proxyMode: 'auto' as const,
-  proxyUrl: '',
 }
 
 if (!key || process.env.OFFLINE === '1') {

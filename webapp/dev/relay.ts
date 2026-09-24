@@ -3,7 +3,7 @@ import http from 'node:http'
 import https from 'node:https'
 import { HttpsProxyAgent } from 'https-proxy-agent'
 import { HttpProxyAgent } from 'http-proxy-agent'
-import { isAllowedTarget, proxyFromEnv, resolveProxy } from './relayPolicy'
+import { isAllowedTarget, proxyDecision, bypassesProxy } from './relayPolicy'
 
 export const RELAY_PATH = '/__relay'
 
@@ -15,6 +15,20 @@ export interface RelayConfig {
   env?: Record<string, string | undefined>
   maxBodyBytes?: number
   timeoutMs?: number
+}
+
+/** Strip credentials so a proxy URL can appear in a message or log safely. */
+export function redact(proxy: string): string {
+  try {
+    const u = new URL(proxy)
+    if (u.username || u.password) {
+      u.username = '***'
+      u.password = '***'
+    }
+    return u.toString()
+  } catch {
+    return '(unparseable proxy URL)'
+  }
 }
 
 function reply(res: ServerResponse, status: number, payload: unknown): void {
@@ -93,15 +107,28 @@ export function createRelayHandler(cfg: RelayConfig) {
         return
       }
 
-      // X-Relay-Proxy semantics:
-      //   absent  -> "auto": use the dev server's own environment default
-      //   empty   -> "none": explicitly go direct from the dev server
-      //   a value -> "custom": use that proxy
+      // Proxy choice. Normally the client sends no proxy header at all and this
+      // is decided purely from the server environment:
+      //   absent  -> environment proxy (HTTPS_PROXY / ALL_PROXY / HTTP_PROXY),
+      //              unless NO_PROXY covers the target
+      //   empty   -> force a direct connection from this server
+      //   a value -> that proxy, verbatim (an explicit override ignores NO_PROXY)
       const sent = req.headers['x-relay-proxy']
-      const proxy =
-        typeof sent === 'string'
-          ? sent.trim() || undefined
-          : resolveProxy(cfg.defaultProxy, proxyFromEnv(env, target))
+      const noProxy = env.no_proxy ?? env.NO_PROXY
+      let proxy: string | undefined
+      let proxySource = ''
+      if (typeof sent === 'string') {
+        proxy = sent.trim() || undefined
+        proxySource = proxy ? 'X-Relay-Proxy' : ''
+      } else if (!bypassesProxy(target, noProxy)) {
+        const d = proxyDecision(env, target) ?? (cfg.defaultProxy ? { url: cfg.defaultProxy, source: 'relay config' } : undefined)
+        if (d) {
+          proxy = d.url
+          proxySource = d.source
+        }
+      } else if (proxyDecision(env, target)) {
+        proxySource = `skipped, ${target} matches NO_PROXY`
+      }
 
       let agent: HttpsProxyAgent<string> | HttpProxyAgent<string> | undefined
       if (proxy) {
@@ -149,7 +176,7 @@ export function createRelayHandler(cfg: RelayConfig) {
           res.end()
           return
         }
-        const via = proxy ? ` via proxy ${proxy}` : ' directly'
+        const via = proxy ? ` via proxy ${redact(proxy)} (${proxySource})` : proxySource ? ` (${proxySource})` : ' directly'
         reply(res, 502, { detail: `relay to ${target} failed${via}: ${e.message}` })
       })
       upstream.end(payload)

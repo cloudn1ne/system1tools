@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
-import type { Plugin } from 'vite'
-import { createRelayHandler, RELAY_PATH } from './dev/relay'
-import { parseAllowlist, proxyFromEnv } from './dev/relayPolicy'
+import type { Plugin, PreviewServer, ViteDevServer } from 'vite'
+import { createRelayHandler, RELAY_PATH, redact } from './dev/relay'
+import { parseAllowlist, proxyDecision, bypassesProxy } from './dev/relayPolicy'
 
 /**
  * Authoritative env values come from ./webapp/.env (the user-requested LiteLLM
@@ -35,43 +35,74 @@ const dotenv = loadDotEnv('.env')
 /** .env wins over the inherited shell environment. */
 const mergedEnv: Record<string, string | undefined> = { ...process.env, ...dotenv }
 const baseUrl = dotenv.LITELLM_BASE_URL || ''
+const probeTarget = baseUrl || 'https://laya.invalid'
 
 // The relay only ever forwards to the configured LiteLLM origin unless more are
-// listed. Never expose the resolved proxy URL to the browser: it can carry
-// credentials, and the proxy is only ever used server-side.
+// listed, so the dev server cannot be abused as a general proxy.
 const allowedOrigins = parseAllowlist(dotenv.RELAY_ALLOWED_ORIGINS, baseUrl)
-const envProxy = proxyFromEnv(mergedEnv, baseUrl || 'https://example.invalid')
-const proxyPresentFromEnv = envProxy ? '1' : ''
-if (envProxy) console.log(`  relay: proxy taken from environment (${redact(envProxy)})`)
 
-/** http://user:pass@host -> http://***:***@host, so logs never leak secrets. */
-function redact(proxy: string): string {
+// --- network path, decided entirely from the environment ----------------------
+// A proxy implies the relay: a browser cannot route fetch() through one. With
+// no proxy either path works, so relay stays the default because it also
+// removes the CORS question. NET_TRANSPORT overrides for static hosting.
+const noProxy = mergedEnv.no_proxy ?? mergedEnv.NO_PROXY
+const rawProxyHit = proxyDecision(mergedEnv, probeTarget)
+const proxyBypassed = !!rawProxyHit && bypassesProxy(probeTarget, noProxy)
+const proxyHit = proxyBypassed ? undefined : rawProxyHit
+const envProxy = proxyHit?.url
+
+const explicit = (dotenv.NET_TRANSPORT ?? process.env.NET_TRANSPORT ?? '').trim().toLowerCase()
+if (explicit && explicit !== 'direct' && explicit !== 'relay') {
+  console.warn(`  net: NET_TRANSPORT="${explicit}" is not "direct" or "relay"; using the automatic choice`)
+}
+const transport = explicit === 'direct' || explicit === 'relay' ? explicit : 'relay'
+
+let netReason: string
+if (explicit) netReason = `NET_TRANSPORT=${explicit}`
+else if (envProxy) netReason = `${proxyHit!.source} is set, and a browser cannot proxy a request itself`
+else if (proxyBypassed) netReason = `${rawProxyHit!.source} is set but ${hostnameOf(probeTarget)} matches NO_PROXY`
+else netReason = 'no proxy in the environment; relay is the default because it also avoids CORS'
+
+if (transport === 'direct' && envProxy) {
+  console.warn(`  net: NET_TRANSPORT=direct while ${proxyHit!.source} is set — the browser will ignore that proxy`)
+}
+console.log(`  net: ${netReason}  ->  ${transport === 'relay' ? `relay ${RELAY_PATH}` : 'direct from browser'}`)
+if (envProxy) console.log(`  net: proxy ${redact(envProxy)} (from ${proxyHit!.source})`)
+
+/** scheme + host only, so the UI can name the proxy without its credentials. */
+function proxyDisplay(proxy: string | undefined): string {
+  if (!proxy) return ''
   try {
     const u = new URL(proxy)
-    if (u.username || u.password) {
-      u.username = '***'
-      u.password = '***'
-    }
-    return u.toString()
+    return `${u.protocol}//${u.host}`
   } catch {
     return '(unparseable)'
   }
 }
 
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return url
+  }
+}
+
 function system1Relay(): Plugin {
+  // must not return anything: vite treats a function returned from
+  // configureServer as a post-init hook and calls it with no request
+  const mount = (server: ViteDevServer | PreviewServer) => {
+    server.middlewares.use(createRelayHandler({ allowedOrigins, defaultProxy: envProxy, env: mergedEnv }))
+  }
   return {
     name: 'system1-relay',
     configureServer(server) {
-      server.middlewares.use(
-        createRelayHandler({ allowedOrigins, defaultProxy: envProxy, env: mergedEnv }),
-      )
+      mount(server)
     },
-    // the bundle always ships knowing about the relay, so `vite preview` (and
-    // any served build) needs it too - configureServer alone is dev-only
+    // the built bundle always knows about the relay, and configureServer is
+    // dev-only, so `vite preview` needs the same handler
     configurePreviewServer(server) {
-      server.middlewares.use(
-        createRelayHandler({ allowedOrigins, defaultProxy: envProxy, env: mergedEnv }),
-      )
+      mount(server)
     },
   }
 }
@@ -90,6 +121,10 @@ export default defineConfig({
     'import.meta.env.LITELLM_MODEL': JSON.stringify(dotenv.LITELLM_MODEL ?? ''),
     'import.meta.env.RELAY_PATH': JSON.stringify(RELAY_PATH),
     'import.meta.env.RELAY_ALLOWED_ORIGINS': JSON.stringify(allowedOrigins.join(',')),
-    'import.meta.env.RELAY_PROXY_FROM_ENV': JSON.stringify(proxyPresentFromEnv),
+    // read-only description of the environment decision, for the settings panel
+    'import.meta.env.NET_TRANSPORT': JSON.stringify(transport),
+    'import.meta.env.NET_REASON': JSON.stringify(netReason),
+    'import.meta.env.NET_PROXY': JSON.stringify(proxyDisplay(envProxy)),
+    'import.meta.env.NET_PROXY_SOURCE': JSON.stringify(envProxy ? proxyHit!.source : ''),
   },
 })
