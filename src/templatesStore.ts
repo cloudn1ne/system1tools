@@ -71,5 +71,30 @@ export function useTemplates() {
 
   const restoreDefaults = useCallback(() => setTemplates(BUILTIN_TEMPLATES), [])
 
-  return { templates, create, update, remove, duplicate, restoreDefaults }
+  /** Import: same id replaces (so an edited export round-trips), new ids are appended. */
+  const merge = useCallback(
+    (incoming: TemplateDef[]): { added: TemplateDef[]; updated: TemplateDef[] } => {
+      const added: TemplateDef[] = []
+      const updated: TemplateDef[] = []
+      setTemplates((prev) => {
+        let next = [...prev]
+        for (const t of incoming) {
+          const i = next.findIndex((x) => x.id === t.id)
+          if (i >= 0) {
+            updated.push(next[i])
+            next[i] = { ...t, id: next[i].id }
+          } else {
+            const withId = { ...t, id: uniqueId(t.id, next) }
+            added.push(withId)
+            next = [...next, withId]
+          }
+        }
+        return next
+      })
+      return { added, updated }
+    },
+    [],
+  )
+
+  return { templates, create, update, remove, duplicate, restoreDefaults, merge }
 }

@@ -26,7 +26,10 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined'
 import { questionsPayload } from '../api'
+import { downloadText, questionToJson, slug, templateToJson } from '../io'
 import { validateTemplate } from '../validation'
 import { CHECKPOINTS } from '../types'
 import type { Checkpoint, QuestionDef, TemplateDef } from '../types'
@@ -66,7 +69,18 @@ export default function QuestionsEditor({
   onClose: () => void
 }) {
   const [draft, setDraft] = useState<TemplateDef>(() => structuredClone(template))
+  const [copied, setCopied] = useState<string | null>(null)
   const issues = useMemo(() => validateTemplate(draft), [draft])
+
+  const copyQuestion = (q: QuestionDef) => {
+    const text = questionToJson(q)
+    navigator.clipboard?.writeText(text).then(
+      () => setCopied(q.id || '(unnamed)'),
+      () => setCopied(null),
+    )
+  }
+
+  const exportSelf = () => downloadText(`${slug(draft.label)}.json`, templateToJson(draft))
 
   const patch = (p: Partial<TemplateDef>) => setDraft((d) => ({ ...d, ...p }))
 
@@ -221,6 +235,11 @@ export default function QuestionsEditor({
                     <MenuItem value="score">score</MenuItem>
                   </Select>
                   <Box sx={{ flexGrow: 1 }} />
+                  <Tooltip title="copy this question as JSON">
+                    <IconButton size="small" onClick={() => copyQuestion(q)}>
+                      <ContentCopyIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                   <Tooltip title="move up">
                     <IconButton size="small" onClick={() => move(i, -1)}>
                       <ArrowUpwardIcon fontSize="small" />
@@ -454,6 +473,11 @@ export default function QuestionsEditor({
           <Button startIcon={<AddIcon />} onClick={addQuestion} variant="outlined" size="small">
             Add question
           </Button>
+          {copied && (
+            <Typography variant="caption" color="text.secondary">
+              copied question “{copied}” to the clipboard — paste it into any questions map to add it there
+            </Typography>
+          )}
 
           {issues.errors.length > 0 && (
             <Alert severity="error">
@@ -483,6 +507,12 @@ export default function QuestionsEditor({
         </Stack>
       </DialogContent>
       <DialogActions>
+        <Tooltip title="download this set as JSON">
+          <Button startIcon={<FileDownloadOutlinedIcon />} onClick={exportSelf}>
+            Export this set
+          </Button>
+        </Tooltip>
+        <Box sx={{ flexGrow: 1 }} />
         <Button onClick={onClose}>Cancel</Button>
         <Button variant="contained" disabled={hasErrors} onClick={() => onSave(draft)}>
           Save questions

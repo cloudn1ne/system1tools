@@ -2,6 +2,7 @@ import { questionsPayload, sendSystemOne } from '../src/api'
 import { extractAnswers, parseAnswer } from '../src/parser'
 import { aggregate } from '../src/aggregate'
 import { validateTemplate } from '../src/validation'
+import { parseImport, templateToJson, templatesToJson } from '../src/io'
 import { BUILTIN_TEMPLATES } from '../src/presets'
 import type { LineResult, TemplateDef } from '../src/types'
 
@@ -43,7 +44,51 @@ const sagg = aggregate([{ line: 1, stateText: 's', ok: true, answers: [sp] }], [
 ok(Math.abs(sagg[0].meanScore - 1.2215) < 1e-9 && sagg[0].levelCount === 3, `score mean=${sagg[0].meanScore} levels=${sagg[0].levelCount}`)
 ok(sagg[0].avgProbs['soon'] !== undefined, 'score avg probability keyed by level description')
 
-// 5. checkpoint handling — live endpoint, skipped when offline
+// 5. import / export round-trips and tolerant shapes
+const rich: TemplateDef = {
+  id: 'rich', label: 'Rich set', description: 'd', checkpoint: 'multilingual', structuredInput: true, builtin: false,
+  questions: [
+    { id: 'n', type: 'noul', instructions: 'n?', criteria: { true: 'yes it is', false: 'no' }, labels: { false: 'B', true: 'A' } },
+    { id: 's', type: 'score', instructions: 's?', criteria: ['lo', 'mid', 'hi'] },
+    { id: 'c', type: 'choice', instructions: 'c?', criteria: { x: 'desc x', y: null } },
+  ],
+}
+const back = parseImport(templatesToJson([...BUILTIN_TEMPLATES, rich]))
+ok(back.templates.length === BUILTIN_TEMPLATES.length + 1, `export-all round trip keeps ${back.templates.length} sets`)
+const richBack = back.templates.find((x) => x.id === 'rich')!
+ok(richBack?.checkpoint === 'multilingual' && richBack?.structuredInput === true, 'checkpoint + JSON-input flag survive export')
+ok(richBack.questions[0].labels?.true === 'A', 'noul labels survive export')
+ok(JSON.stringify(richBack.questions[1].criteria) === '["lo","mid","hi"]', 'score level order survives export')
+ok((richBack.questions[2].criteria as any).y === null, 'null choice description survives export')
+ok(parseImport(templateToJson(rich)).templates.length === 1, 'single-set export imports back as one set')
+
+const layaMap = parseImport(JSON.stringify({
+  dept: { type: 'choice', instructions: 'which team?', criteria: { billing: 'refunds', tech: 'bugs' } },
+  urgent: { type: 'noul', instructions: 'urgent?' },
+}))
+ok(layaMap.templates.length === 1 && layaMap.templates[0].questions.length === 2, 'bare laya questions map imports as one set')
+ok(layaMap.templates[0].questions[0].id === 'dept', 'map keys become answer keys')
+
+const wrapped = parseImport(JSON.stringify({ label: 'Wrapped', checkpoint: 'typed-decisions', questions: { a: { type: 'noul', instructions: 'a?' } } }))
+ok(wrapped.templates[0].label === 'Wrapped' && wrapped.templates[0].checkpoint === 'typed-decisions', 'wrapped {questions:{...}} keeps metadata')
+
+const one = parseImport(JSON.stringify({ type: 'score', instructions: 'how bad?', criteria: ['mild', 'bad'] }))
+ok(one.templates.length === 1 && one.templates[0].questions[0].type === 'score', 'a lone question object imports as a one-question set')
+
+const arr = parseImport(JSON.stringify([{ type: 'noul', instructions: 'q1?' }, { type: 'noul', instructions: 'q2?' }]))
+ok(arr.templates[0].questions.length === 2, 'an array of bare questions becomes one set')
+
+const mixed = parseImport(JSON.stringify({ good: { type: 'noul', instructions: 'ok?' }, junk: { foo: 1 } }))
+ok(mixed.templates[0].questions.length === 1 && mixed.notes.some((n) => n.includes("skipped 'junk'")), 'non-questions skipped and reported')
+
+let threw = ''
+try { parseImport('{ not json') } catch (e) { threw = String(e) }
+ok(threw.includes('not valid JSON'), `malformed JSON rejected (${threw.slice(0, 40)})`)
+threw = ''
+try { parseImport('{"a": 1}') } catch (e) { threw = String(e) }
+ok(threw.includes('no noul/choice/score questions'), 'JSON with no questions rejected')
+
+// 6. checkpoint handling — live endpoint, skipped when offline
 const key = process.env.LITELLM_API_KEY ?? ''
 const settings = {
   baseUrl: process.env.LITELLM_BASE_URL || 'https://ai.warp.at',

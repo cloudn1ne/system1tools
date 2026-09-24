@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef } from 'react'
 import {
   Button,
   Card,
@@ -19,6 +19,8 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import RestoreIcon from '@mui/icons-material/Restore'
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined'
+import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined'
 import type { TemplateDef } from '../types'
 
 export default function TemplatesPanel({
@@ -30,6 +32,9 @@ export default function TemplatesPanel({
   onDuplicate,
   onDelete,
   onRestoreDefaults,
+  onExportAll,
+  onExport,
+  onImportFile,
 }: {
   templates: TemplateDef[]
   selected: string
@@ -39,18 +44,46 @@ export default function TemplatesPanel({
   onDuplicate: (id: string) => void
   onDelete: (id: string) => void
   onRestoreDefaults: () => void
+  onExportAll: () => void
+  onExport: (id: string) => void
+  onImportFile: (file: File) => void
 }) {
+  const fileRef = useRef<HTMLInputElement>(null)
+
   return (
     <Card>
       <CardHeader
         title="Predefined questions"
-        subheader="SAMPLES templates + Laya's own presets — edit or add your own"
+        subheader="SAMPLES templates + Laya's own presets — edit, add or import your own"
         action={
-          <Tooltip title="Restore the built-in set (drops custom edits)">
-            <IconButton size="small" onClick={onRestoreDefaults}>
-              <RestoreIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <Stack direction="row" spacing={0.25}>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,application/json"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) onImportFile(f)
+                e.target.value = ''
+              }}
+            />
+            <Tooltip title="import a JSON file">
+              <IconButton size="small" onClick={() => fileRef.current?.click()}>
+                <FileUploadOutlinedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="export every set to one JSON file">
+              <IconButton size="small" onClick={onExportAll}>
+                <FileDownloadOutlinedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Restore the built-in set (drops custom edits)">
+              <IconButton size="small" onClick={onRestoreDefaults}>
+                <RestoreIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
         }
       />
       <CardContent sx={{ pt: 0 }}>
@@ -80,6 +113,11 @@ export default function TemplatesPanel({
                     </Stack>
                   }
                 />
+                <Tooltip title="export this set">
+                  <IconButton size="small" onClick={() => onExport(t.id)}>
+                    <FileDownloadOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
                 <Tooltip title="edit questions">
                   <IconButton size="small" onClick={() => onEdit(t.id)}>
                     <EditOutlinedIcon fontSize="small" />
@@ -100,9 +138,14 @@ export default function TemplatesPanel({
           </Stack>
         </RadioGroup>
         <Divider sx={{ my: 1.5 }} />
-        <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={onNew}>
-          New question set
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={onNew}>
+            New question set
+          </Button>
+          <Button size="small" variant="text" startIcon={<FileUploadOutlinedIcon />} onClick={() => fileRef.current?.click()}>
+            Import
+          </Button>
+        </Stack>
       </CardContent>
     </Card>
   )

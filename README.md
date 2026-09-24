@@ -33,6 +33,35 @@ To reach the dev server via a hostname other than localhost, add it to
 5. Read the per-question charts, then the results table: filter by text or
    status, sort any column, click a row for that line's full answer + raw JSON.
 
+## Import / export
+
+Everything is plain JSON, so question sets move between browsers, repos and
+curl examples without this app involved.
+
+| Action | Where | Result |
+|---|---|---|
+| Export **all** sets in one file | ⤓ icon in the *Predefined questions* header | `system1-questions-N-sets.json` |
+| Export **one** set | ⤓ icon on a set's row, or *Export this set* in the editor | `<set-name>.json` |
+| Export **one question** | copy icon on a question row in the editor | that question as JSON on the clipboard |
+| Import | ⤒ icon in the header, or *Import* | merges, reports added/replaced/skipped |
+
+Import is deliberately tolerant — it accepts any of:
+
+```jsonc
+{ "system1-analyzer": 1, "templates": [ … ] }   // anything this app exported
+[ { "label": "…", "questions": { … } } ]         // a bare array of sets
+{ "questions": { … }, "checkpoint": "english" }  // a wrapped set with metadata
+{ "dept": { "type": "choice", … } }              // a raw Laya questions map
+{ "type": "noul", "instructions": "…" }          // one lone question
+```
+
+That means you can save the `-d '{…}'` body of any Laya or Jev `curl` example —
+including the four in `system1/SAMPLES.md` — and import it directly: the
+imported set re-sends byte-identical `questions`. Entries that are not a
+`noul`/`choice`/`score` question are skipped and named in the result notice,
+never silently dropped. Importing a set whose `id` already exists **replaces**
+it, so an edited export round-trips; new ids are appended.
+
 ## Laya feature coverage
 
 Request: `{ state, questions }` POSTed to `${LITELLM_BASE_URL}/v1/systemone`
@@ -52,6 +81,7 @@ with `Authorization: Bearer ${LITELLM_API_KEY}`.
 | Routing metadata (`model`, `repo`, `reason`, `detection`) | per-line detail dialog + connectivity ping |
 | Structured JSON states | per-template *JSON input* switch |
 | ≤ 10 MB input files | enforced in the uploader |
+| Portable question sets | JSON import/export, per set and all-in-one (`src/io.ts`) |
 
 Client-side validation also warns about the two documented model pitfalls before
 you burn a run: boolean-word `choice` keys (`true`/`false`/`yes`/`no` — the
@@ -80,17 +110,19 @@ content moderation, model router. The four `SAMPLES.md` shapes from the
 src/presets.ts              built-in question sets (SAMPLES + Laya presets)
 src/templatesStore.ts       localStorage CRUD for predefined question sets
 src/validation.ts           Laya's question rules, checked before any request
+src/io.ts                   JSON export + tolerant multi-shape import
 src/api.ts                  questionsPayload() per primitive + sendSystemOne()
 src/parser.ts               parses noul/choice/score answers (score = numeric level + legend)
 src/aggregate.ts            mean P(true), mean level, distributions, avg prob, mean confidence
 src/components/
   ConfigPanel.tsx           endpoint / key / model / path, confidence gate, ping
-  TemplatesPanel.tsx        select / edit / duplicate / delete / new
-  QuestionsEditor.tsx       the CRUD editor: questions, criteria, labels, checkpoint
+  TemplatesPanel.tsx        select / edit / duplicate / delete / new / import / export
+  QuestionsEditor.tsx       the CRUD editor: questions, criteria, labels, checkpoint,
+                            per-question copy-as-JSON, export this set
   UploadPanel.tsx           file picker (<=10 MB), line count, progress
   Charts.tsx                chart.js: noul doughnut+scatter, choice/score bars
   ResultsTable.tsx          filter, sort, paginate, per-line detail dialog
-tests/logic.test.mts        payload/parse/aggregate/validation + live endpoint checks
+tests/logic.test.mts        payload/parse/aggregate/validation/io + live endpoint checks
 ```
 
 ## Endpoint note

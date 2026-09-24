@@ -8,6 +8,7 @@ import {
   Container,
   Divider,
   Paper,
+  Snackbar,
   Stack,
   Toolbar,
   Typography,
@@ -25,14 +26,25 @@ import { extractAnswers, parseAnswer } from './parser'
 import { aggregate } from './aggregate'
 import { validateTemplate } from './validation'
 import { useTemplates } from './templatesStore'
-import type { ApiSettings, LineResult } from './types'
+import {
+  downloadText,
+  parseImport,
+  readTextFile,
+  slug,
+  templateToJson,
+  templatesToJson,
+} from './io'
+import type { ApiSettings, LineResult, TemplateDef } from './types'
 
 const CONCURRENCY = 4
 
 export default function App() {
-  const { templates, create, update, remove, duplicate, restoreDefaults } = useTemplates()
+  const { templates, create, update, remove, duplicate, restoreDefaults, merge } = useTemplates()
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? '')
   const [editorId, setEditorId] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ severity: 'success' | 'info' | 'warning' | 'error'; text: string } | null>(
+    null,
+  )
 
   const [settings, setSettings] = useState<ApiSettings>({
     baseUrl: CONFIG.baseUrl,
@@ -162,6 +174,36 @@ export default function App() {
     setTemplateId(t.id)
   }
 
+  const handleExportAll = () => {
+    downloadText(`system1-questions-${templates.length}-sets.json`, templatesToJson(templates))
+    setNotice({ severity: 'success', text: `exported all ${templates.length} question sets to one JSON file` })
+  }
+
+  const handleExport = (id: string) => {
+    const t = templates.find((x) => x.id === id)
+    if (!t) return
+    downloadText(`${slug(t.label)}.json`, templateToJson(t))
+    setNotice({ severity: 'success', text: `exported “${t.label}” (${t.questions.length} questions)` })
+  }
+
+  const handleImportFile = async (file: File) => {
+    try {
+      const { templates: incoming, notes } = parseImport(await readTextFile(file))
+      const { added, updated } = merge(incoming)
+      const parts = [
+        added.length ? `${added.length} added (${added.map((t) => t.label).join(', ')})` : '',
+        updated.length ? `${updated.length} replaced (${updated.map((t) => t.label).join(', ')})` : '',
+        ...notes,
+      ].filter(Boolean)
+      setNotice({
+        severity: notes.length ? 'warning' : 'success',
+        text: `imported from ${file.name}: ${parts.join('; ') || 'nothing to do'}`,
+      })
+    } catch (e) {
+      setNotice({ severity: 'error', text: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
   const aggs = results.length ? aggregate(results, template.questions) : []
   const okCount = results.filter((r) => r.ok).length
 
@@ -192,6 +234,9 @@ export default function App() {
                 onDuplicate={handleDuplicate}
                 onDelete={handleDelete}
                 onRestoreDefaults={restoreDefaults}
+                onExportAll={handleExportAll}
+                onExport={handleExport}
+                onImportFile={handleImportFile}
               />
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -239,6 +284,17 @@ export default function App() {
       {editorTemplate && (
         <QuestionsEditor template={editorTemplate} onSave={handleSave} onClose={() => setEditorId(null)} />
       )}
+
+      <Snackbar
+        open={!!notice}
+        autoHideDuration={7000}
+        onClose={() => setNotice(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={notice?.severity ?? 'info'} onClose={() => setNotice(null)} sx={{ maxWidth: '80vw' }}>
+          {notice?.text}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }
