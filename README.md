@@ -35,7 +35,9 @@ Uploads a file, sends every line (or a bounded prefix of them) as a `state` to
 the Jev-compatible `POST /v1/systemone` endpoint with a set of typed questions
 (`noul`, `choice`, `score`), then aggregates the answers statistically and
 charts them with chart.js. Question sets are editable in the browser and
-portable as JSON. See [`webapp/README.md`](webapp/README.md).
+portable as JSON. Requests can go straight from the browser or through the dev
+server's relay, which is how a proxy-only endpoint is reached. See
+[`webapp/README.md`](webapp/README.md).
 
 ## Git
 
@@ -123,6 +125,11 @@ The rules that keep it that way:
 
 - **`.env` is ignored** — it holds the real `LITELLM_API_KEY`. Only
   `.env.example` (placeholder key, real base URL/model) is tracked.
+- **Proxy credentials live in `.env` too** (`HTTPS_PROXY=http://user:pass@...`).
+  The relay reads them in node and never ships the value to the browser, so a
+  proxy password cannot leak through the bundle. Endpoint settings (including a
+  proxy URL typed into the UI) are held in memory only - nothing about the
+  endpoint is written to `localStorage`; just question sets.
 - Do not widen the ignore patterns to `.env*`; that would drop
   `.env.example` from the repo.
 - `id_*`, `*.pem`, `*.key`, `*.p12` are ignored so a key file cannot be

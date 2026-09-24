@@ -88,12 +88,110 @@ threw = ''
 try { parseImport('{"a": 1}') } catch (e) { threw = String(e) }
 ok(threw.includes('no noul/choice/score questions'), 'JSON with no questions rejected')
 
-// 6. checkpoint handling — live endpoint, skipped when offline
+// 6. relay policy: target pinning and proxy resolution
+import { isAllowedTarget, parseAllowlist, resolveProxy, proxyFromEnv, originOf } from '../dev/relayPolicy'
+
+const allow = parseAllowlist('https://ai.warp.at, http://localhost:8003 ', 'https://ai.warp.at')
+ok(allow.length === 2, `allowlist parsed + deduped (${allow.join(' ')})`)
+ok(isAllowedTarget('https://ai.warp.at/v1/systemone', allow), 'configured target allowed')
+ok(isAllowedTarget('https://ai.warp.at/anything', allow), 'same origin, different path still allowed')
+ok(!isAllowedTarget('http://ai.warp.at/v1/systemone', allow), 'scheme downgrade not allowed')
+ok(!isAllowedTarget('https://evil.example/v1/systemone', allow), 'other origin refused')
+ok(!isAllowedTarget('https://ai.warp.at.evil.example/x', allow), 'suffix-spoof origin refused')
+ok(!isAllowedTarget('file:///etc/passwd', allow), 'non-http scheme refused')
+ok(!isAllowedTarget('not a url', allow), 'garbage refused')
+ok(originOf('https://ai.warp.at:443/x') === 'https://ai.warp.at', 'default port normalised')
+
+ok(resolveProxy('http://p:3128', 'http://env:8080') === 'http://p:3128', 'explicit proxy beats environment')
+ok(resolveProxy('  ', 'http://env:8080') === 'http://env:8080', 'blank explicit falls back to environment')
+ok(resolveProxy(undefined, '   ') === undefined, 'blank environment means no proxy')
+ok(proxyFromEnv({ https_proxy: 'http://s:1' }, 'https://ai.warp.at') === 'http://s:1', 'https target uses https_proxy')
+ok(proxyFromEnv({ http_proxy: 'http://s:1' }, 'http://ai.warp.at') === 'http://s:1', 'http target uses http_proxy')
+ok(proxyFromEnv({ http_proxy: 'http://s:1' }, 'https://ai.warp.at') === 'http://s:1', 'falls through to http_proxy for https target')
+ok(proxyFromEnv({}, 'https://ai.warp.at') === undefined, 'no proxy vars -> direct')
+
+// 6b. what the client actually sends for each transport/proxy choice
+import { targetUrl } from '../src/api'
+
+ok(targetUrl({ baseUrl: 'https://ai.warp.at', endpoint: '/v1/systemone' }) === 'https://ai.warp.at/v1/systemone', 'target url joins base + endpoint')
+ok(targetUrl({ baseUrl: 'http://h:8003', endpoint: '' }) === 'http://h:8003/v1/systemone', 'blank endpoint falls back to default path')
+
+{
+  const realFetch = globalThis.fetch
+  let url = ''
+  let headers: Record<string, string> = {}
+  globalThis.fetch = (async (u: string, init: RequestInit) => {
+    url = u
+    headers = init.headers as Record<string, string>
+    return { ok: true, json: async () => ({ answers: {} }) } as unknown as Response
+  }) as typeof fetch
+
+  // custom mode with a blank URL must refuse rather than silently go direct
+  let sent = 0
+  let msg = ''
+  globalThis.fetch = (async () => {
+    sent++
+    return { ok: true, json: async () => ({}) } as unknown as Response
+  }) as typeof fetch
+  await sendSystemOne(
+    { baseUrl: 'https://ai.warp.at', apiKey: '', endpoint: '/v1/systemone', transport: 'relay', proxyMode: 'custom', proxyUrl: '  ' },
+    { state: 'x', questions: {}, checkpoint: 'auto', model: '' },
+  ).catch((e: Error) => {
+    msg = e.message
+  })
+  ok(sent === 0, 'custom proxy mode with no URL sends nothing')
+  ok(/no proxy URL/i.test(msg), `and says why: ${msg}`)
+
+  globalThis.fetch = (async (u: string, init: RequestInit) => {
+    url = u
+    headers = init.headers as Record<string, string>
+    return { ok: true, json: async () => ({ answers: {} }) } as unknown as Response
+  }) as typeof fetch
+
+  await sendSystemOne(
+    { baseUrl: 'https://ai.warp.at', apiKey: 'k', endpoint: '/v1/systemone', transport: 'relay', proxyMode: 'custom', proxyUrl: 'http://p:3128' },
+    { state: 'x', questions: {}, checkpoint: 'auto', model: '' },
+  )
+  ok(url === '/__relay', `relay mode posts to the relay path, not the endpoint (${url})`)
+  ok(headers['X-Relay-Target'] === 'https://ai.warp.at/v1/systemone', 'target carried as a header')
+  ok(headers['X-Relay-Proxy'] === 'http://p:3128', 'custom proxy carried as a header')
+  ok(headers.Authorization === 'Bearer k', 'auth forwarded through the relay')
+
+  // 'auto' must send NO proxy header, so the server applies its own environment
+  await sendSystemOne(
+    { baseUrl: 'https://ai.warp.at', apiKey: '', endpoint: '/v1/systemone', transport: 'relay', proxyMode: 'auto', proxyUrl: 'ignored' },
+    { state: 'x', questions: {}, checkpoint: 'auto', model: '' },
+  )
+  ok(headers['X-Relay-Proxy'] === undefined, "'auto' sends no proxy header, leaving it to the server")
+
+  // 'none' sends an explicitly empty header
+  await sendSystemOne(
+    { baseUrl: 'https://ai.warp.at', apiKey: '', endpoint: '/v1/systemone', transport: 'relay', proxyMode: 'none', proxyUrl: '' },
+    { state: 'x', questions: {}, checkpoint: 'auto', model: '' },
+  )
+  ok(headers['X-Relay-Proxy'] === '', "'none' sends an empty proxy header to force direct")
+
+  // direct mode bypasses the relay entirely
+  await sendSystemOne(
+    { baseUrl: 'https://ai.warp.at', apiKey: '', endpoint: '/v1/systemone', transport: 'direct', proxyMode: 'auto', proxyUrl: '' },
+    { state: 'x', questions: {}, checkpoint: 'auto', model: '' },
+  )
+  ok(url === 'https://ai.warp.at/v1/systemone', `direct mode posts straight to the endpoint (${url})`)
+  ok(!headers['X-Relay-Target'] && !headers['X-Relay-Proxy'], 'direct mode sends no relay headers')
+
+  globalThis.fetch = realFetch
+}
+
+// 7. checkpoint handling — live endpoint, skipped when offline
 const key = process.env.LITELLM_API_KEY ?? ''
 const settings = {
   baseUrl: process.env.LITELLM_BASE_URL || 'https://ai.warp.at',
   apiKey: key,
   endpoint: '/v1/systemone',
+  // live tests talk to the endpoint straight from node, not through the relay
+  transport: 'direct' as const,
+  proxyMode: 'auto' as const,
+  proxyUrl: '',
 }
 
 if (!key || process.env.OFFLINE === '1') {

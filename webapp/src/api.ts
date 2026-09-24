@@ -1,4 +1,5 @@
-import type { Checkpoint, QuestionDef, TemplateDef } from './types'
+import type { Checkpoint, QuestionDef, TemplateDef, ProxyMode, Transport } from './types'
+import { RELAY } from './config'
 
 export interface SendOptions {
   state: string | Record<string, unknown>
@@ -7,6 +8,15 @@ export interface SendOptions {
   checkpoint: Checkpoint
   /** LiteLLM model name; only used when the checkpoint is 'auto' and this is set */
   model: string
+}
+
+export interface RequestSettings {
+  baseUrl: string
+  apiKey: string
+  endpoint: string
+  transport: Transport
+  proxyMode: ProxyMode
+  proxyUrl: string
 }
 
 function cleanNoulCriteria(q: QuestionDef): Record<string, string> | undefined {
@@ -60,12 +70,14 @@ export function questionsPayload(template: TemplateDef): Record<string, unknown>
   return questions
 }
 
+/** Where a request would physically go, for display and tests. */
+export function targetUrl(settings: { baseUrl: string; endpoint: string }): string {
+  return `${settings.baseUrl}${settings.endpoint || '/v1/systemone'}`
+}
+
 /** POST one state + questions to the configured /v1/systemone endpoint. */
-export async function sendSystemOne(
-  settings: { baseUrl: string; apiKey: string; endpoint: string },
-  opts: SendOptions,
-): Promise<unknown> {
-  const url = `${settings.baseUrl}${settings.endpoint || '/v1/systemone'}`
+export async function sendSystemOne(settings: RequestSettings, opts: SendOptions): Promise<unknown> {
+  const target = targetUrl(settings)
 
   const body: Record<string, unknown> = { state: opts.state, questions: opts.questions }
   // A client `model` naming a Laya checkpoint pins it; any other value disables auto-routing.
@@ -74,6 +86,19 @@ export async function sendSystemOne(
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (settings.apiKey) headers['Authorization'] = `Bearer ${settings.apiKey}`
+
+  let url = target
+  if (settings.transport === 'relay') {
+    if (settings.proxyMode === 'custom' && !settings.proxyUrl.trim()) {
+      throw new Error('proxy mode is "custom" but no proxy URL is set')
+    }
+    url = RELAY.path
+    headers['X-Relay-Target'] = target
+    // absent header = use whatever proxy the dev server found in its own
+    // environment; empty header = explicitly go direct from the dev server
+    if (settings.proxyMode === 'custom') headers['X-Relay-Proxy'] = settings.proxyUrl.trim()
+    else if (settings.proxyMode === 'none') headers['X-Relay-Proxy'] = ''
+  }
 
   const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
   if (!res.ok) {

@@ -5,6 +5,16 @@ export type Checkpoint = 'auto' | 'english' | 'multilingual' | 'typed-decisions'
 
 export const CHECKPOINTS: Checkpoint[] = ['auto', 'english', 'multilingual', 'typed-decisions']
 
+/**
+ * How the request physically leaves the browser. A browser cannot route one
+ * fetch() through a proxy, so 'relay' posts to the dev server, which forwards
+ * from node where an HTTP(S) proxy is configurable.
+ */
+export type Transport = 'direct' | 'relay'
+
+/** auto = use the dev server's own environment; custom = typed URL; none = force direct */
+export type ProxyMode = 'auto' | 'custom' | 'none'
+
 export interface QuestionDef {
   id: string
   type: QuestionType
@@ -38,6 +48,12 @@ export interface ApiSettings {
   endpoint: string
   /** flag answers whose confidence falls below this (Laya: gate on confidence, not act_probability) */
   confidenceGate: number
+  /** how the request physically leaves the browser */
+  transport: Transport
+  /** proxy selection, used when transport is 'relay' */
+  proxyMode: ProxyMode
+  /** proxy URL for proxyMode 'custom', e.g. http://proxy.internal:3128 */
+  proxyUrl: string
 }
 
 /** Parsed answer for a single question on a single line. */

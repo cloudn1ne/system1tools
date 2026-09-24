@@ -23,6 +23,40 @@ variable already present in the **process environment does not override it**.
 To reach the dev server via a hostname other than localhost, add it to
 `server.allowedHosts` in `vite.config.ts`.
 
+## Reaching the endpoint (proxy)
+
+A browser cannot route a single `fetch()` through a proxy, so the app offers two
+network paths (bottom of the **LiteLLM endpoint** panel):
+
+| Path | What happens | Use when |
+|---|---|---|
+| **direct from browser** | browser POSTs to the base URL | the endpoint is reachable from the workstation, and its CORS lets this origin |
+| **dev-server relay** (default) | browser POSTs to `/__relay`; the vite server forwards from node | the endpoint needs a proxy, or you want CORS out of the way |
+
+In relay mode, three proxy choices are offered:
+
+- **from server environment** (default) — the dev server uses `HTTPS_PROXY` /
+  `ALL_PROXY` / `HTTP_PROXY` (or the same keys in `.env`). The value is never
+  sent to the browser, so a proxy password stays server-side.
+- **custom URL** — typed in the UI, e.g. `http://user:pass@proxy.internal:3128`.
+  Sent per request as `X-Relay-Proxy`; it overrides the environment.
+- **no proxy** — relayed, but the dev server connects directly.
+
+The relay will only forward to `LITELLM_BASE_URL`'s origin. Anything else gets
+`403`, which stops the dev server being turned into an open proxy; list extra
+hosts with `RELAY_ALLOWED_ORIGINS=https://a,https://b` if you point the UI at
+another endpoint at runtime. Startup logs the proxy it picked, with credentials
+redacted.
+
+Two limits worth knowing: the relay lives in the **dev server**, so a static
+`npm run build` deployment has to use *direct from browser* (or mount
+`createRelayHandler` from `dev/relay.ts` in your own node server); and it is
+request-body limited (4 MB) with a 60 s upstream timeout.
+
+If the endpoint is only reachable through a proxy *and* you must ship the static
+build, run the relay beside it - `dev/relay.ts` is a plain connect-style
+middleware and takes `allowedOrigins` plus `defaultProxy`.
+
 ## Usage
 
 1. Pick a predefined question set (MITRE ATT&CK analyzer is first).
