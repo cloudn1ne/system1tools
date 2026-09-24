@@ -35,6 +35,11 @@ const sp = parseAnswer({ id: 'urg', type: 'score', instructions: 'u' } as never,
 ok(sp.score === 1.2215, `score parsed as number (${sp.score})`)
 ok(sp.value === 'critical deadline or blocking issue', `level named via legend argmax (${sp.value})`)
 ok(sp.value !== 'score', 'regression: no longer returns the literal string "score"')
+ok(
+  parseAnswer({ id: 'x', type: 'noul', instructions: 'is this about billing?' } as never, { noul: 0.5, confidence: 0.5 })
+    .instructions === 'is this about billing?',
+  'parsed answer keeps the instruction it was asked with',
+)
 
 // 4. aggregation over a few lines
 const mk = (line: number, qid: string, raw: unknown): LineResult => ({ line, stateText: 's', ok: true, answers: [parseAnswer({ id: qid, type: 'noul', instructions: '' } as never, raw)] })

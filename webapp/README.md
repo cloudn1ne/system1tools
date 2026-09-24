@@ -77,6 +77,9 @@ with a 60 s upstream timeout.
 5. **Analyse N lines** — concurrency 4, live progress.
 6. Read the per-question charts, then the results table: filter by text or
    status, sort any column, click a row for that line's full answer + raw JSON.
+   Each answer in that dialog repeats the **instruction** it was produced
+   against — the answer key alone (`act`, `category`) does not say what was
+   asked — and hovering a column header shows the same text.
 7. To de-clutter the table, tick **hide below gate**: answers whose confidence
    falls under the gate disappear from the list (their cell shows `—`, with the
    confidence as a tooltip), and a question that no line answered confidently is

@@ -6,7 +6,7 @@ import type { ParsedAnswer, QuestionDef } from './types'
  * and nested object forms.
  */
 export function parseAnswer(q: QuestionDef, raw: unknown): ParsedAnswer {
-  const base: ParsedAnswer = { questionId: q.id, type: q.type, raw }
+  const base: ParsedAnswer = { questionId: q.id, type: q.type, instructions: q.instructions, raw }
 
   if (typeof raw === 'number') {
     // A bare number -> treat as probability (noul)

@@ -15,13 +15,13 @@ const ok = (c: boolean, m: string) => {
   if (!c) fails++
 }
 
-const ans = (questionId: string, confidence: number): ParsedAnswer =>
-  ({ questionId, type: 'noul', instructions: '', prob: 0.5, confidence }) as unknown as ParsedAnswer
+const ans = (questionId: string, confidence: number, instructions = ''): ParsedAnswer =>
+  ({ questionId, type: 'noul', instructions, prob: 0.5, confidence }) as unknown as ParsedAnswer
 const row = (line: number, list: ParsedAnswer[]): LineResult => ({ line, stateText: `line ${line}`, ok: true, answers: list })
 
 const results: LineResult[] = [
-  row(1, [ans('q1', 0.9), ans('q2', 0.2), ans('q3', 0.2)]),
-  row(2, [ans('q1', 0.1), ans('q2', 0.1), ans('q3', 0.3)]),
+  row(1, [ans('q1', 0.9, 'does this indicate exfiltration?'), ans('q2', 0.2, 'is the source internal?'), ans('q3', 0.2, 'is the payload encrypted?')]),
+  row(2, [ans('q1', 0.1, 'does this indicate exfiltration?'), ans('q2', 0.1, 'is the source internal?'), ans('q3', 0.3, 'is the payload encrypted?')]),
 ]
 
 const html = renderToStaticMarkup(React.createElement(ResultsTable, { results, confidenceGate: 0.35 }))
@@ -38,6 +38,8 @@ ok(/q1/.test(html) && /q2/.test(html) && /q3/.test(html), 'every question column
 ok(count(/<th /g) === 7, `header has one column per question (${count(/<th /g)} <th> cells)`)
 ok(count(/<tr class=|<tr /g) >= 3, 'header plus both data rows rendered')
 ok(/0\.9000|90%/.test(html), 'answer values reach the markup')
+ok(/title="does this indicate exfiltration\?"/.test(html), 'column header carries the question instruction as a tooltip')
+ok(count(/title="[^"]*\?"/g) === 3, 'each question column gets its own instruction')
 
 // a failing line still renders, with its error
 const withError: LineResult[] = [{ line: 3, stateText: 'boom', ok: false, error: 'upstream 502', answers: [] }]

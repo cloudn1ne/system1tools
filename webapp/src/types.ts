@@ -54,6 +54,8 @@ export interface ApiSettings {
 export interface ParsedAnswer {
   questionId: string
   type: QuestionType
+  /** the instruction this answer was produced against, kept so the detail view can say what the answer means */
+  instructions?: string
   /** noul probability P(true) */
   prob?: number
   /** score: expected ordinal level */

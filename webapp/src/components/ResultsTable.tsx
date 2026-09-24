@@ -179,6 +179,12 @@ function DetailDialog({
                     <Typography variant="overline">{a.questionId}</Typography>
                     <Chip size="small" variant="outlined" label={types[a.questionId] ?? a.type} />
                   </Stack>
+                  {/* what was actually asked, so the answer has a referent */}
+                  {a.instructions && (
+                    <Typography variant="body2" sx={{ mt: 0.25, color: 'text.secondary' }}>
+                      {a.instructions}
+                    </Typography>
+                  )}
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
                     {a.prob !== undefined && (
                       <Chip size="small" label={`P(true) = ${a.prob.toFixed(4)}`} color={probColor(a.prob)} />
@@ -251,6 +257,17 @@ export default function ResultsTable({
     const t: Record<string, QuestionType> = {}
     for (const r of results) for (const a of r.answers) t[a.questionId] = a.type
     return t
+  }, [results])
+
+  /**
+   * Instruction text per question, taken from the answers themselves rather
+   * than the live template: results keep the wording they were produced with,
+   * even if the question set is edited afterwards.
+   */
+  const instructions = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const r of results) for (const a of r.answers) if (a.instructions && !m[a.questionId]) m[a.questionId] = a.instructions
+    return m
   }, [results])
 
   const filtered = useMemo(() => {
@@ -381,6 +398,7 @@ export default function ResultsTable({
                   key={key}
                   align={key === 'state' ? 'left' : key === 'line' ? 'left' : 'center'}
                   sortDirection={sortKey === key ? dir : false}
+                  title={instructions[key] ?? undefined}
                 >
                   <TableSortLabel
                     active={sortKey === key}
