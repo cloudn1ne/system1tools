@@ -34,6 +34,17 @@ export function parseAnswer(q: QuestionDef, raw: unknown): ParsedAnswer {
       }
       base.probabilities = dist
     }
+    // score: expected ordinal level + the level legend
+    const sc = o['score']
+    if (typeof sc === 'number') base.score = sc
+    const legend = o['legend']
+    if (legend && typeof legend === 'object') {
+      const lmap: Record<string, string> = {}
+      for (const [k, v] of Object.entries(legend as Record<string, unknown>)) {
+        if (typeof v === 'string') lmap[k] = v
+      }
+      base.legend = lmap
+    }
     // numeric probability
     for (const k of ['noul', 'probability', 'prob', 'p']) {
       const v = o[k]
@@ -49,6 +60,16 @@ export function parseAnswer(q: QuestionDef, raw: unknown): ParsedAnswer {
         base.value = String(v)
         return base
       }
+    }
+    // score answers carry no label: name the most probable level via the legend
+    if (base.score !== undefined) {
+      const dist = base.probabilities
+      if (dist && Object.keys(dist).length) {
+        const keys = Object.keys(dist)
+        const top = keys.reduce((a, b) => (dist[b] > dist[a] ? b : a), keys[0])
+        base.value = base.legend?.[top] ?? top
+      }
+      return base
     }
     // maybe a probabilities map over options -> pick argmax
     const probKeys = Object.keys(o).filter((k) => typeof o[k] === 'number')

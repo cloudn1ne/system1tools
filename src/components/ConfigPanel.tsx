@@ -53,8 +53,9 @@ export default function ConfigPanel({
             onChange={(e) => onChange({ ...settings, apiKey: e.target.value })}
           />
           <TextField
-            label="Model"
+            label="Model / LiteLLM model name"
             size="small"
+            helperText="Used only when a template's checkpoint is 'auto'. Naming a Laya checkpoint (english / multilingual / typed-decisions) pins it; any other value pins the English router."
             value={settings.model}
             onChange={(e) => onChange({ ...settings, model: e.target.value })}
           />
@@ -67,6 +68,21 @@ export default function ConfigPanel({
               onChange({ ...settings, endpoint: e.target.value })
             }}
           />
+          <Stack spacing={0.5}>
+            <Typography variant="caption" color="text.secondary">
+              confidence gate: {(settings.confidenceGate * 100).toFixed(0)}% — answers below this are
+              flagged for human review. Laya's action.act_probability carries no signal (#185); gate on
+              confidence.
+            </Typography>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={settings.confidenceGate}
+              onChange={(e) => onChange({ ...settings, confidenceGate: Number(e.target.value) })}
+            />
+          </Stack>
           <Typography variant="caption" color="text.secondary">
             Loaded from environment: base=<code>{CONFIG.baseUrl}</code> model=<code>{CONFIG.model}</code>
           </Typography>

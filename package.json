@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "tsx tests/logic.test.mts",
+    "test:offline": "OFFLINE=1 tsx tests/logic.test.mts"
   },
   "dependencies": {
     "@emotion/react": "^11.13.0",
@@ -22,6 +24,7 @@
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.5.0",
     "vite": "^5.4.0"
   }

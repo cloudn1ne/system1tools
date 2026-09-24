@@ -40,6 +40,7 @@ type StatusFilter = 'all' | 'ok' | 'error'
 function answerSortValue(ans: ParsedAnswer | undefined): number | string | null {
   if (!ans) return null
   if (ans.prob !== undefined) return ans.prob
+  if (ans.score !== undefined) return ans.score
   if (ans.probabilities) return Math.max(...Object.values(ans.probabilities))
   if (ans.value !== undefined) return ans.value.toLowerCase()
   return null
@@ -61,10 +62,13 @@ function probColor(p: number): 'error' | 'warning' | 'success' {
   return 'success'
 }
 
-function AnswerChip({ ans }: { ans: ParsedAnswer }) {
+function AnswerChip({ ans, gate }: { ans: ParsedAnswer; gate: number }) {
+  const low = ans.confidence !== undefined && ans.confidence < gate
+  const conf = ans.confidence !== undefined ? `confidence ${(ans.confidence * 100).toFixed(0)}%` : ''
+
   if (ans.prob !== undefined) {
     return (
-      <Tooltip title={ans.confidence !== undefined ? `confidence ${(ans.confidence * 100).toFixed(0)}%` : ''}>
+      <Tooltip title={conf}>
         <Chip
           size="small"
           label={
@@ -72,18 +76,27 @@ function AnswerChip({ ans }: { ans: ParsedAnswer }) {
               ? `${(ans.prob * 100).toFixed(0)}% (conf ${(ans.confidence * 100).toFixed(0)}%)`
               : `${(ans.prob * 100).toFixed(0)}%`
           }
-          color={ans.prob > 0.5 ? 'error' : 'success'}
+          color={low ? 'warning' : ans.prob > 0.5 ? 'error' : 'success'}
         />
       </Tooltip>
     )
   }
-  return (
-    <Chip
-      size="small"
-      label={ans.value ?? '?'}
-      color={ans.confidence !== undefined && ans.confidence > 0.5 ? 'primary' : 'default'}
-    />
-  )
+
+  // ordinal: show the expected level next to the most probable level's description
+  if (ans.score !== undefined) {
+    return (
+      <Tooltip title={`expected level ${ans.score.toFixed(3)}${conf ? ` · ${conf}` : ''}`}>
+        <Chip
+          size="small"
+          label={`${ans.value ?? '?'} · ${ans.score.toFixed(2)}`}
+          color={low ? 'warning' : 'primary'}
+          variant={low ? 'filled' : 'outlined'}
+        />
+      </Tooltip>
+    )
+  }
+
+  return <Chip size="small" label={ans.value ?? '?'} color={low ? 'warning' : 'default'} />
 }
 
 function ProbBars({ ans }: { ans: ParsedAnswer }) {
@@ -93,8 +106,8 @@ function ProbBars({ ans }: { ans: ParsedAnswer }) {
     <Stack spacing={0.5} sx={{ mt: 1 }}>
       {entries.map(([k, v]) => (
         <Stack key={k} direction="row" spacing={1} alignItems="center">
-          <Typography variant="caption" sx={{ width: 170, flexShrink: 0 }}>
-            {k}
+          <Typography variant="caption" sx={{ width: 210, flexShrink: 0 }}>
+            {ans.legend?.[k] ?? k}
           </Typography>
           <Box
             sx={{
@@ -117,10 +130,12 @@ function ProbBars({ ans }: { ans: ParsedAnswer }) {
 function DetailDialog({
   row,
   types,
+  gate,
   onClose,
 }: {
   row: LineResult | null
   types: Record<string, QuestionType>
+  gate: number
   onClose: () => void
 }) {
   return (
@@ -162,13 +177,26 @@ function DetailDialog({
                     <Chip size="small" variant="outlined" label={types[a.questionId] ?? a.type} />
                   </Stack>
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
-                    {a.prob !== undefined ? (
-                      <Chip size="small" label={`p = ${a.prob.toFixed(4)}`} color={probColor(a.prob)} />
-                    ) : (
+                    {a.prob !== undefined && (
+                      <Chip size="small" label={`P(true) = ${a.prob.toFixed(4)}`} color={probColor(a.prob)} />
+                    )}
+                    {a.score !== undefined && (
+                      <Chip
+                        size="small"
+                        color="primary"
+                        label={`level ${a.score.toFixed(4)}${a.value ? ` → ${a.value}` : ''}`}
+                      />
+                    )}
+                    {a.score === undefined && a.prob === undefined && (
                       <Chip size="small" label={`answer: ${a.value ?? '(none)'}`} color="primary" />
                     )}
                     {a.confidence !== undefined && (
-                      <Chip size="small" variant="outlined" label={`confidence ${a.confidence.toFixed(4)}`} />
+                      <Chip
+                        size="small"
+                        color={a.confidence < gate ? 'warning' : 'default'}
+                        variant="outlined"
+                        label={`confidence ${a.confidence.toFixed(4)}${a.confidence < gate ? ' · below gate' : ''}`}
+                      />
                     )}
                   </Stack>
                   <ProbBars ans={a} />
@@ -196,7 +224,13 @@ function DetailDialog({
   )
 }
 
-export default function ResultsTable({ results }: { results: LineResult[] }) {
+export default function ResultsTable({
+  results,
+  confidenceGate = 0,
+}: {
+  results: LineResult[]
+  confidenceGate?: number
+}) {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<StatusFilter>('all')
   const [sortKey, setSortKey] = useState<SortKey>('line')
@@ -344,7 +378,7 @@ export default function ResultsTable({ results }: { results: LineResult[] }) {
                   const ans = r.answers.find((a) => a.questionId === q)
                   return (
                     <TableCell key={q} align="center">
-                      {ans ? <AnswerChip ans={ans} /> : '—'}
+                      {ans ? <AnswerChip ans={ans} gate={confidenceGate} /> : '—'}
                     </TableCell>
                   )
                 })}
@@ -370,7 +404,7 @@ export default function ResultsTable({ results }: { results: LineResult[] }) {
         rowsPerPageOptions={[10, 25, 50, 100]}
       />
 
-      <DetailDialog row={detail} types={types} onClose={() => setDetail(null)} />
+      <DetailDialog row={detail} types={types} gate={confidenceGate} onClose={() => setDetail(null)} />
     </Paper>
   )
 }

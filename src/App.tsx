@@ -1,37 +1,47 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import {
   Alert,
   AppBar,
   Box,
+  Button,
   Chip,
   Container,
+  Divider,
   Paper,
   Stack,
   Toolbar,
   Typography,
 } from '@mui/material'
 import ConfigPanel from './components/ConfigPanel'
-import TemplatesPanel, { templateSummary } from './components/TemplatesPanel'
+import TemplatesPanel from './components/TemplatesPanel'
+import QuestionsEditor from './components/QuestionsEditor'
 import UploadPanel from './components/UploadPanel'
 import ResultsTable from './components/ResultsTable'
 import Charts from './components/Charts'
 import { CONFIG, DEFAULT_ENDPOINT } from './config'
-import { findTemplate } from './templates'
+import { findTemplate, templateSummary } from './presets'
 import { questionsPayload, sendSystemOne } from './api'
 import { extractAnswers, parseAnswer } from './parser'
 import { aggregate } from './aggregate'
+import { validateTemplate } from './validation'
+import { useTemplates } from './templatesStore'
 import type { ApiSettings, LineResult } from './types'
 
 const CONCURRENCY = 4
 
 export default function App() {
+  const { templates, create, update, remove, duplicate, restoreDefaults } = useTemplates()
+  const [templateId, setTemplateId] = useState(templates[0]?.id ?? '')
+  const [editorId, setEditorId] = useState<string | null>(null)
+
   const [settings, setSettings] = useState<ApiSettings>({
     baseUrl: CONFIG.baseUrl,
     apiKey: CONFIG.apiKey,
     model: CONFIG.model,
     endpoint: DEFAULT_ENDPOINT,
+    confidenceGate: 0.35,
   })
-  const [templateId, setTemplateId] = useState('mitre')
+
   const [fileName, setFileName] = useState('')
   const [lines, setLines] = useState<string[]>([])
   const [results, setResults] = useState<LineResult[]>([])
@@ -39,16 +49,21 @@ export default function App() {
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [error, setError] = useState<string | null>(null)
 
+  const template = useMemo(() => findTemplate(templates, templateId), [templates, templateId])
+  const editorTemplate = editorId ? templates.find((t) => t.id === editorId) : undefined
+  const gate = validateTemplate(template)
+
   const handleFile = (file: File) => {
     setFileName(file.name)
     const reader = new FileReader()
     reader.onload = () => {
       const text = String(reader.result ?? '')
-      const raw = text.split(/\r?\n/)
-      const trimmed = raw
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0)
-      setLines(trimmed)
+      setLines(
+        text
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0),
+      )
       setResults([])
     }
     reader.readAsText(file)
@@ -56,38 +71,36 @@ export default function App() {
 
   const analyze = async () => {
     setError(null)
+    if (gate.errors.length) {
+      setError(`Fix the questions first: ${gate.errors[0]}`)
+      return
+    }
     setRunning(true)
-    const template = findTemplate(templateId)
+
     const questions = questionsPayload(template)
+    const checkpoint = template.checkpoint ?? 'auto'
     const out: LineResult[] = []
     let idx = 0
     const total = lines.length
     setProgress({ done: 0, total })
 
     const worker = async () => {
-      while (true) {
+      for (;;) {
         const i = idx
         idx += 1
         if (i >= total) break
         const raw = lines[i]
-        let state: string | Record<string, unknown>
+        let state: string | Record<string, unknown> = raw
         if (template.structuredInput) {
           try {
             state = JSON.parse(raw)
           } catch {
-            state = raw
+            /* not JSON: send the raw line */
           }
-        } else {
-          state = raw
         }
-        const res: LineResult = {
-          line: i + 1,
-          stateText: raw,
-          ok: true,
-          answers: [],
-        }
+        const res: LineResult = { line: i + 1, stateText: raw, ok: true, answers: [] }
         try {
-          const payload = await sendSystemOne(settings, { state, questions })
+          const payload = await sendSystemOne(settings, { state, questions, checkpoint, model: settings.model })
           res.raw = payload
           const answersMap = extractAnswers(payload)
           for (const q of template.questions) {
@@ -111,24 +124,45 @@ export default function App() {
   const connectTest = async () => {
     setError(null)
     try {
-      const template = findTemplate('mitre')
-      const payload = await sendSystemOne(settings, {
-        state: 'FIREWALL: blocked outbound connection from 10.30.2.7 to 185.220.101.44:4444 (TLS). Repeated every 5s for 10 minutes.',
+      const payload = (await sendSystemOne(settings, {
+        state: 'FIREWALL: blocked outbound connection from 10.30.2.7 to 185.220.101.44:4444 (TLS), repeated every 5s.',
         questions: questionsPayload(template),
-      })
+        checkpoint: template.checkpoint ?? 'auto',
+        model: settings.model,
+      })) as { answers?: unknown; routing?: { model?: string; reason?: string } }
       const answers = extractAnswers(payload)
       const summary = Object.entries(answers)
-        .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-        .join(', ')
-      alert(`Endpoint OK.\n\nanswers: ${summary || '(none parsed)'}\n\nraw: ${JSON.stringify(payload).slice(0, 400)}`)
+        .map(([k, v]) => `${k} = ${JSON.stringify(v)}`)
+        .join('\n')
+      alert(
+        `Endpoint OK.\ncheckpoint: ${JSON.stringify(payload?.routing?.model)} (${payload?.routing?.reason})\n\n${summary || '(none parsed)'}`,
+      )
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      alert(`Endpoint failed:\n${msg}`)
       setError(msg)
+      alert(`Endpoint failed:\n${msg}`)
     }
   }
 
-  const aggs = results.length ? aggregate(results, findTemplate(templateId).questions) : []
+  const handleNew = () => {
+    const id = create()
+    if (id) setEditorId(id)
+  }
+  const handleDelete = (id: string) => {
+    remove(id)
+    if (templateId === id) setTemplateId(templates.find((t) => t.id !== id)?.id ?? '')
+  }
+  const handleDuplicate = (id: string) => {
+    const newId = duplicate(id)
+    if (newId) setEditorId(newId)
+  }
+  const handleSave = (t: (typeof templates)[number]) => {
+    update(t.id, t)
+    setEditorId(null)
+    setTemplateId(t.id)
+  }
+
+  const aggs = results.length ? aggregate(results, template.questions) : []
   const okCount = results.filter((r) => r.ok).length
 
   return (
@@ -138,20 +172,29 @@ export default function App() {
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             System1 Analyzer
           </Typography>
-          <Chip label={`model: ${settings.model}`} variant="outlined" />
+          <Chip label={`checkpoint: ${template.checkpoint ?? 'auto'}`} variant="outlined" sx={{ mr: 1 }} />
           <Chip label={`${results.length} lines`} variant="outlined" />
         </Toolbar>
       </AppBar>
 
-      <Container maxWidth="lg" sx={{ mt: 3 }}>
+      <Container maxWidth="lg" sx={{ mt: 3, mb: 6 }}>
         <Stack spacing={3}>
           <ConfigPanel settings={settings} onChange={setSettings} onConnectTest={connectTest} />
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} alignItems="stretch">
-            <Box sx={{ flex: 1 }}>
-              <TemplatesPanel selected={templateId} onSelect={setTemplateId} />
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <TemplatesPanel
+                templates={templates}
+                selected={templateId}
+                onSelect={setTemplateId}
+                onNew={handleNew}
+                onEdit={setEditorId}
+                onDuplicate={handleDuplicate}
+                onDelete={handleDelete}
+                onRestoreDefaults={restoreDefaults}
+              />
             </Box>
-            <Box sx={{ flex: 1 }}>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
               <UploadPanel
                 lines={lines.length}
                 fileName={fileName}
@@ -163,25 +206,39 @@ export default function App() {
             </Box>
           </Stack>
 
+          {gate.warnings.length > 0 && (
+            <Alert severity="warning">
+              {gate.warnings.map((w, i) => (
+                <div key={i}>{w}</div>
+              ))}
+            </Alert>
+          )}
           {error && <Alert severity="error">{error}</Alert>}
 
           {results.length > 0 && (
             <>
               <Paper sx={{ p: 2 }}>
-                <Stack direction="row" spacing={2} alignItems="center">
-                  <Typography variant="h6">
-                    Results — {templateSummary(findTemplate(templateId))}
+                <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+                  <Typography variant="h6">{template.label}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {templateSummary(template)}
                   </Typography>
+                  <Box sx={{ flexGrow: 1 }} />
                   <Chip color="success" label={`${okCount} ok`} />
                   <Chip color="error" label={`${results.length - okCount} failed`} />
                 </Stack>
               </Paper>
+              <Divider />
               <Charts aggs={aggs} />
-              <ResultsTable results={results} />
+              <ResultsTable results={results} confidenceGate={settings.confidenceGate} />
             </>
           )}
         </Stack>
       </Container>
+
+      {editorTemplate && (
+        <QuestionsEditor template={editorTemplate} onSave={handleSave} onClose={() => setEditorId(null)} />
+      )}
     </Box>
   )
 }

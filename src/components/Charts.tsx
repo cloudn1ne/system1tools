@@ -99,8 +99,10 @@ export default function Charts({ aggs }: { aggs: AggregatedQuestion[] }) {
             action={
               <Typography variant="caption">
                 {agg.type === 'noul'
-                  ? `mean prob ${(agg.meanProb * 100).toFixed(1)}% · conf ${(agg.meanConfidence * 100).toFixed(1)}%`
-                  : `avg prob per option`}
+                  ? `mean P(true) ${(agg.meanProb * 100).toFixed(1)}% · conf ${(agg.meanConfidence * 100).toFixed(1)}%`
+                  : agg.type === 'score'
+                    ? `mean level ${agg.meanScore.toFixed(2)} / ${Math.max(0, agg.levelCount - 1)} · conf ${(agg.meanConfidence * 100).toFixed(1)}%`
+                    : `avg prob per option · conf ${(agg.meanConfidence * 100).toFixed(1)}%`}
               </Typography>
             }
           />
